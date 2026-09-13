@@ -1,0 +1,1680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>评测审查</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;500;600&family=Source+Code+Pro:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      /* Stripe design system */
+      --bg: #ffffff;
+      --surface: #ffffff;
+      --border: #e5edf5;
+      --text: #061b31;
+      --text-muted: #64748d;
+      --label: #273951;
+      --accent: #533afd;
+      --accent-hover: #4434d4;
+      --purple-light: #b9b9f9;
+      --green: #15be53;
+      --green-text: #108c3d;
+      --red: #ea2261;
+      --red-text: #c81e4f;
+      --amber: #9b6829;
+      --bg-doc: #f6f9fc;      /* 文档式浅蓝底（表格浅色表头/悬停底） */
+      --surface-alt: #f0f4f9; /* 更浅一档的分隔底（SVG 网格线/环形图底环） */
+      --shadow: var(--shadow-soft); /* JS 动态卡片的通用阴影 */
+      --toast-bg: #061b31;
+      --toast-text: #ffffff;
+      --radius: 6px;
+      --shadow-soft: rgba(23,23,23,0.06) 0px 3px 6px 0px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      font-feature-settings: "ss01";
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---- Header ---- */
+    .header {
+      background: rgba(83, 58, 253, 0.06);
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .header h1 {
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: 1.75rem;
+      font-weight: 300;
+      letter-spacing: -0.35px;
+    }
+    .header h1 b { font-weight: 600; }
+    .header .kicker {
+      font-family: 'Source Code Pro', monospace;
+      font-size: 0.7rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      margin-bottom: 0.2rem;
+    }
+    .header .instructions {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+    .header .progress {
+      font-size: 0.875rem;
+      opacity: 0.8;
+      text-align: right;
+    }
+
+    /* ---- Main content ---- */
+    .main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    /* ---- Sections ---- */
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      flex-shrink: 0;
+      box-shadow: var(--shadow-soft);
+    }
+    .section-header {
+      font-family: 'Source Sans 3', sans-serif;
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .section-body {
+      padding: 1rem;
+    }
+
+    /* ---- Config badge ---- */
+    .config-badge {
+      display: inline-block;
+      padding: 0.2rem 0.625rem;
+      border-radius: 9999px;
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-left: 0.75rem;
+      vertical-align: middle;
+    }
+    .config-badge.config-primary {
+      background: rgba(83, 58, 253, 0.12);
+      color: var(--accent);
+    }
+    .config-badge.config-baseline {
+      background: rgba(155, 104, 41, 0.12);
+      color: var(--amber);
+    }
+
+    /* ---- Prompt ---- */
+    .prompt-text {
+      white-space: pre-wrap;
+      font-size: 0.9375rem;
+      line-height: 1.6;
+    }
+
+    /* ---- Outputs ---- */
+    .output-file {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .output-file + .output-file {
+      margin-top: 1rem;
+    }
+    .output-file-header {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .output-file-header .dl-btn {
+      font-size: 0.7rem;
+      color: var(--accent);
+      text-decoration: none;
+      cursor: pointer;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-weight: 500;
+      opacity: 0.8;
+    }
+    .output-file-header .dl-btn:hover {
+      opacity: 1;
+      text-decoration: underline;
+    }
+    .output-file-content {
+      padding: 0.75rem;
+      overflow-x: auto;
+    }
+    .output-file-content pre {
+      font-size: 0.8125rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+    .output-file-content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+    .output-file-content iframe {
+      width: 100%;
+      height: 600px;
+      border: none;
+    }
+    .output-file-content table {
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+      width: 100%;
+    }
+    .output-file-content table td,
+    .output-file-content table th {
+      border: 1px solid var(--border);
+      padding: 0.375rem 0.5rem;
+      text-align: left;
+    }
+    .output-file-content table th {
+      background: var(--bg);
+      font-weight: 600;
+    }
+    .output-file-content .download-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+    .output-file-content .download-link:hover {
+      background: var(--border);
+    }
+    .empty-state {
+      color: var(--text-muted);
+      font-style: italic;
+      padding: 2rem;
+      text-align: center;
+    }
+
+    /* ---- Feedback ---- */
+    .prev-feedback {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.625rem 0.75rem;
+      margin-top: 0.75rem;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .prev-feedback-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.25rem;
+      color: var(--text-muted);
+    }
+    .feedback-textarea {
+      width: 100%;
+      min-height: 100px;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.9375rem;
+      line-height: 1.5;
+      resize: vertical;
+      color: var(--text);
+    }
+    .feedback-textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(83, 58, 253, 0.1);
+    }
+    .feedback-status {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      min-height: 1.1em;
+    }
+
+    /* ---- Grades (collapsible) ---- */
+    .grades-toggle {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .grades-toggle:hover {
+      color: var(--accent);
+    }
+    .grades-toggle .arrow {
+      margin-right: 0.5rem;
+      transition: transform 0.15s;
+      font-size: 0.75rem;
+    }
+    .grades-toggle .arrow.open {
+      transform: rotate(90deg);
+    }
+    .grades-content {
+      display: none;
+      margin-top: 0.75rem;
+    }
+    .grades-content.open {
+      display: block;
+    }
+    .grades-summary {
+      font-size: 0.875rem;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .grade-badge {
+      display: inline-block;
+      padding: 0.125rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .grade-pass { background: rgba(21,190,83,0.08); color: var(--green); }
+    .grade-fail { background: rgba(234,34,97,0.06); color: var(--red); }
+    .assertion-list {
+      list-style: none;
+    }
+    .assertion-item {
+      padding: 0.625rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8125rem;
+    }
+    .assertion-item:last-child { border-bottom: none; }
+    .assertion-status {
+      font-weight: 600;
+      margin-right: 0.5rem;
+    }
+    .assertion-status.pass { color: var(--green); }
+    .assertion-status.fail { color: var(--red); }
+    .assertion-evidence {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      margin-top: 0.25rem;
+      padding-left: 1.5rem;
+    }
+
+    /* ---- View tabs ---- */
+    .view-tabs {
+      display: flex;
+      gap: 0;
+      padding: 0 2rem;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .view-tab {
+      font-family: 'Source Sans 3', sans-serif;
+      padding: 0.625rem 1.25rem;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .view-tab:hover { color: var(--text); }
+    .view-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    .view-panel { display: none; }
+    .view-panel.active { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+    /* ---- 基准对比视图 ---- */
+    .benchmark-view {
+      padding: 1.5rem 2rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .benchmark-table {
+      border-collapse: separate;
+      border-spacing: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      font-size: 0.8125rem;
+      width: 100%;
+      margin-bottom: 1.5rem;
+      box-shadow: var(--shadow-soft);
+    }
+    .benchmark-table th, .benchmark-table td {
+      padding: 0.625rem 0.875rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .benchmark-table tr:last-child td { border-bottom: none; }
+    .benchmark-table th {
+      font-family: 'Source Sans 3', sans-serif;
+      background: var(--bg-doc);
+      color: var(--label);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .benchmark-table tr:hover { background: var(--bg); }
+    .benchmark-table tr.benchmark-row-with { background: rgba(83, 58, 253, 0.06); }
+    .benchmark-table tr.benchmark-row-without { background: rgba(155, 104, 41, 0.06); }
+    .benchmark-table tr.benchmark-row-with:hover { background: rgba(83, 58, 253, 0.12); }
+    .benchmark-table tr.benchmark-row-without:hover { background: rgba(155, 104, 41, 0.12); }
+    .benchmark-table tr.benchmark-row-avg { font-weight: 600; border-top: 2px solid var(--border); }
+    .benchmark-table tr.benchmark-row-avg.benchmark-row-with { background: rgba(83, 58, 253, 0.12); }
+    .benchmark-table tr.benchmark-row-avg.benchmark-row-without { background: rgba(155, 104, 41, 0.12); }
+    .benchmark-delta-positive { color: var(--green); font-weight: 600; }
+    .benchmark-delta-negative { color: var(--red); font-weight: 600; }
+    .benchmark-notes {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+    }
+    .benchmark-notes h3 {
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: 0.875rem;
+      margin-bottom: 0.75rem;
+    }
+    .benchmark-notes ul {
+      list-style: disc;
+      padding-left: 1.25rem;
+    }
+    .benchmark-notes li {
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      margin-bottom: 0.375rem;
+    }
+    .benchmark-empty {
+      color: var(--text-muted);
+      font-style: italic;
+      text-align: center;
+      padding: 3rem;
+    }
+
+    /* ---- Navigation ---- */
+    .nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 2rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .nav-btn {
+      font-family: 'Source Sans 3', sans-serif;
+      padding: 0.5rem 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text);
+      transition: all 0.15s;
+    }
+    .nav-btn:hover:not(:disabled) {
+      background: var(--bg);
+      border-color: var(--text-muted);
+    }
+    .nav-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .done-btn {
+      font-family: 'Source Sans 3', sans-serif;
+      padding: 0.5rem 1.5rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .done-btn:hover {
+      background: var(--bg);
+      border-color: var(--text-muted);
+    }
+    .done-btn.ready {
+      border: none;
+      background: var(--accent);
+      color: var(--toast-text);
+      font-weight: 600;
+    }
+    .done-btn.ready:hover {
+      background: var(--accent-hover);
+    }
+    /* ---- Done overlay ---- */
+    .done-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+    .done-overlay.visible {
+      display: flex;
+    }
+    .done-card {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 2rem 3rem;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 500px;
+    }
+    .done-card h2 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .done-card p {
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+    .done-card .btn-row {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+    .done-card button {
+      padding: 0.5rem 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    .done-card button:hover {
+      background: var(--bg);
+    }
+    /* ---- Toast ---- */
+    .toast {
+      position: fixed;
+      bottom: 5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--toast-bg);
+      color: var(--toast-text);
+      padding: 0.625rem 1.25rem;
+      border-radius: var(--radius);
+      font-size: 0.875rem;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 200;
+    }
+    .toast.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" style="height:100vh; display:flex; flex-direction:column;">
+    <div class="header">
+      <div>
+        <div class="kicker">评测报告</div>
+        <h1><b>评测审查</b> · <span id="skill-name"></span></h1>
+        <div class="instructions">逐个查看输出并在下方留下反馈。可用方向键或按钮切换。看完后回到 Hermes 会话说一声"看完了"。</div>
+      </div>
+      <div class="progress" id="progress"></div>
+    </div>
+
+    <!-- View tabs (only shown when benchmark data exists) -->
+    <div class="view-tabs" id="view-tabs" style="display:none;">
+      <button class="view-tab active" onclick="switchView('poster')">摘要</button>
+      <button class="view-tab" onclick="switchView('outputs')">输出</button>
+      <button class="view-tab" onclick="switchView('benchmark')">基准对比</button>
+      <button class="view-tab" onclick="switchView('trigger')" id="tab-trigger" style="display:none;">触发优化</button>
+    </div>
+
+    <!-- Poster panel (merged summary poster) -->
+    <div class="view-panel active" id="panel-poster">
+      <div class="benchmark-view" id="poster-content">
+        <div class="benchmark-empty">暂无基准数据，先跑 aggregate_benchmark。</div>
+      </div>
+    </div>
+
+    <!-- Outputs panel (qualitative review) -->
+    <div class="view-panel" id="panel-outputs">
+    <div class="main">
+      <!-- Prompt -->
+      <div class="section">
+        <div class="section-header">任务提示词 <span class="config-badge" id="config-badge" style="display:none;"></span></div>
+        <div class="section-body">
+          <div class="prompt-text" id="prompt-text"></div>
+        </div>
+      </div>
+
+      <!-- Outputs -->
+      <div class="section">
+        <div class="section-header">输出</div>
+        <div class="section-body" id="outputs-body">
+          <div class="empty-state">未找到输出文件</div>
+        </div>
+      </div>
+
+      <!-- Previous Output (collapsible) -->
+      <div class="section" id="prev-outputs-section" style="display:none;">
+        <div class="section-header">
+          <div class="grades-toggle" onclick="togglePrevOutputs()">
+            <span class="arrow" id="prev-outputs-arrow">&#9654;</span>
+            上一轮输出
+          </div>
+        </div>
+        <div class="grades-content" id="prev-outputs-content"></div>
+      </div>
+
+      <!-- Grades (collapsible) -->
+      <div class="section" id="grades-section" style="display:none;">
+        <div class="section-header">
+          <div class="grades-toggle" onclick="toggleGrades()">
+            <span class="arrow" id="grades-arrow">&#9654;</span>
+            评分结果
+          </div>
+        </div>
+        <div class="grades-content" id="grades-content"></div>
+      </div>
+
+      <!-- Feedback -->
+      <div class="section">
+        <div class="section-header">你的反馈</div>
+        <div class="section-body">
+          <textarea
+            class="feedback-textarea"
+            id="feedback"
+            placeholder="这份输出你觉得怎么样？有问题、建议，或哪里做得好，都写下来～"
+          ></textarea>
+          <div class="feedback-status" id="feedback-status"></div>
+          <div class="prev-feedback" id="prev-feedback" style="display:none;">
+            <div class="prev-feedback-label">上一轮反馈</div>
+            <div id="prev-feedback-text"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="nav" id="outputs-nav">
+      <button class="nav-btn" id="prev-btn" onclick="navigate(-1)">&#8592; 上一条</button>
+      <button class="done-btn" id="done-btn" onclick="showDoneDialog()">提交全部反馈</button>
+      <button class="nav-btn" id="next-btn" onclick="navigate(1)">下一条 &#8594;</button>
+    </div>
+    </div><!-- end panel-outputs -->
+
+    <!-- 基准对比面板（定量统计） -->
+    <div class="view-panel" id="panel-benchmark">
+      <div class="benchmark-view" id="benchmark-content">
+        <div class="benchmark-empty">暂无基准数据，跑完基准汇总（aggregate_benchmark）后这里显示定量对比。</div>
+      </div>
+    </div>
+
+    <!-- Trigger panel (description optimization results) -->
+    <div class="view-panel" id="panel-trigger">
+      <div class="benchmark-view" id="trigger-content">
+        <div class="benchmark-empty">未提供触发优化报告。用 generate_review.py --trigger-report <run_loop输出.json> 传入。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Done overlay -->
+  <div class="done-overlay" id="done-overlay">
+    <div class="done-card">
+      <h2>审查完成</h2>
+      <p>反馈已保存。回到 Hermes 会话，告诉助手你看完了就行～</p>
+      <div class="btn-row">
+        <button onclick="closeDoneDialog()">好的</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ---- Embedded data (injected by generate_review.py) ----
+    /*__EMBEDDED_DATA__*/
+
+    // ---- State ----
+    let feedbackMap = {};  // run_id -> feedback text
+    let currentIndex = 0;
+    let visitedRuns = new Set();
+
+    // ---- Init ----
+    async function init() {
+      // Load saved feedback from server — but only if this isn't a fresh
+      // iteration (indicated by previous_feedback being present). When
+      // previous feedback exists, the feedback.json on disk is stale from
+      // the prior iteration and should not pre-fill the textareas.
+      const hasPrevious = Object.keys(EMBEDDED_DATA.previous_feedback || {}).length > 0
+        || Object.keys(EMBEDDED_DATA.previous_outputs || {}).length > 0;
+      if (!hasPrevious) {
+        try {
+          const resp = await fetch("/api/feedback");
+          const data = await resp.json();
+          if (data.reviews) {
+            for (const r of data.reviews) feedbackMap[r.run_id] = r.feedback;
+          }
+        } catch { /* first run, no feedback yet */ }
+      }
+
+      document.getElementById("skill-name").textContent = EMBEDDED_DATA.skill_name || "";
+      showRun(0);
+
+      // Wire up feedback auto-save
+      const textarea = document.getElementById("feedback");
+      let saveTimeout = null;
+      textarea.addEventListener("input", () => {
+        clearTimeout(saveTimeout);
+        document.getElementById("feedback-status").textContent = "";
+        saveTimeout = setTimeout(() => saveCurrentFeedback(), 800);
+      });
+    }
+
+    // ---- Navigation ----
+    function navigate(delta) {
+      const newIndex = currentIndex + delta;
+      if (newIndex >= 0 && newIndex < EMBEDDED_DATA.runs.length) {
+        saveCurrentFeedback();
+        showRun(newIndex);
+      }
+    }
+
+    function updateNavButtons() {
+      document.getElementById("prev-btn").disabled = currentIndex === 0;
+      document.getElementById("next-btn").disabled =
+        currentIndex === EMBEDDED_DATA.runs.length - 1;
+    }
+
+    // 配置目录名→中文显示（目录名是脚本契约，只翻显示层）
+    function configLabel(config) {
+      const map = { with_skill: "技能组", without_skill: "基线组", new_skill: "新版技能组", old_skill: "旧版技能组" };
+      return map[config] || config.replace(/_/g, " ");
+    }
+
+    // ---- Show a run ----
+    function showRun(index) {
+      currentIndex = index;
+      const run = EMBEDDED_DATA.runs[index];
+
+      // Progress
+      document.getElementById("progress").textContent =
+        `${index + 1} / ${EMBEDDED_DATA.runs.length}`;
+
+      // Prompt
+      document.getElementById("prompt-text").textContent = run.prompt;
+
+      // Config badge
+      const badge = document.getElementById("config-badge");
+      const configMatch = run.id.match(/(with_skill|without_skill|new_skill|old_skill)/);
+      if (configMatch) {
+        const config = configMatch[1];
+        const isBaseline = config === "without_skill" || config === "old_skill";
+        badge.textContent = configLabel(config);
+        badge.className = "config-badge " + (isBaseline ? "config-baseline" : "config-primary");
+        badge.style.display = "inline-block";
+      } else {
+        badge.style.display = "none";
+      }
+
+      // Outputs
+      renderOutputs(run);
+
+      // Previous outputs
+      renderPrevOutputs(run);
+
+      // Grades
+      renderGrades(run);
+
+      // Previous feedback
+      const prevFb = (EMBEDDED_DATA.previous_feedback || {})[run.id];
+      const prevEl = document.getElementById("prev-feedback");
+      if (prevFb) {
+        document.getElementById("prev-feedback-text").textContent = prevFb;
+        prevEl.style.display = "block";
+      } else {
+        prevEl.style.display = "none";
+      }
+
+      // Feedback
+      document.getElementById("feedback").value = feedbackMap[run.id] || "";
+      document.getElementById("feedback-status").textContent = "";
+
+      updateNavButtons();
+
+      // Track visited runs and promote done button when all visited
+      visitedRuns.add(index);
+      const doneBtn = document.getElementById("done-btn");
+      if (visitedRuns.size >= EMBEDDED_DATA.runs.length) {
+        doneBtn.classList.add("ready");
+      }
+
+      // Scroll main content to top
+      document.querySelector(".main").scrollTop = 0;
+    }
+
+    // ---- Render outputs ----
+    function renderOutputs(run) {
+      const container = document.getElementById("outputs-body");
+      container.innerHTML = "";
+
+      const outputs = run.outputs || [];
+      if (outputs.length === 0) {
+        container.innerHTML = '<div class="empty-state">无输出文件</div>';
+        return;
+      }
+
+      for (const file of outputs) {
+        const fileDiv = document.createElement("div");
+        fileDiv.className = "output-file";
+
+        // Always show file header with download link
+        const header = document.createElement("div");
+        header.className = "output-file-header";
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = file.name;
+        header.appendChild(nameSpan);
+        const dlBtn = document.createElement("a");
+        dlBtn.className = "dl-btn";
+        dlBtn.textContent = "下载";
+        dlBtn.download = file.name;
+        dlBtn.href = getDownloadUri(file);
+        header.appendChild(dlBtn);
+        fileDiv.appendChild(header);
+
+        const content = document.createElement("div");
+        content.className = "output-file-content";
+
+        if (file.type === "text") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          content.appendChild(pre);
+        } else if (file.type === "image") {
+          const img = document.createElement("img");
+          img.src = file.data_uri;
+          img.alt = file.name;
+          content.appendChild(img);
+        } else if (file.type === "pdf") {
+          const iframe = document.createElement("iframe");
+          iframe.src = file.data_uri;
+          content.appendChild(iframe);
+        } else if (file.type === "xlsx") {
+          renderXlsx(content, file.data_b64);
+        } else if (file.type === "binary") {
+          const a = document.createElement("a");
+          a.className = "download-link";
+          a.href = file.data_uri;
+          a.download = file.name;
+          a.textContent = "下载 " + file.name;
+          content.appendChild(a);
+        } else if (file.type === "error") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          pre.style.color = "var(--red)";
+          content.appendChild(pre);
+        }
+
+        fileDiv.appendChild(content);
+        container.appendChild(fileDiv);
+      }
+    }
+
+    // ---- XLSX rendering via SheetJS ----
+    function renderXlsx(container, b64Data) {
+      try {
+        const raw = Uint8Array.from(atob(b64Data), c => c.charCodeAt(0));
+        const wb = XLSX.read(raw, { type: "array" });
+
+        for (let i = 0; i < wb.SheetNames.length; i++) {
+          const sheetName = wb.SheetNames[i];
+          const ws = wb.Sheets[sheetName];
+
+          if (wb.SheetNames.length > 1) {
+            const sheetLabel = document.createElement("div");
+            sheetLabel.style.cssText =
+              "font-weight:600; font-size:0.8rem; color:var(--text-muted); margin-top:0.5rem; margin-bottom:0.25rem;";
+            sheetLabel.textContent = "工作表：" + sheetName;
+            container.appendChild(sheetLabel);
+          }
+
+          const htmlStr = XLSX.utils.sheet_to_html(ws, { editable: false });
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = htmlStr;
+          container.appendChild(wrapper);
+        }
+      } catch (err) {
+        container.textContent = "渲染表格失败：" + err.message;
+      }
+    }
+
+    // ---- Grades ----
+    function renderGrades(run) {
+      const section = document.getElementById("grades-section");
+      const content = document.getElementById("grades-content");
+
+      if (!run.grading) {
+        section.style.display = "none";
+        return;
+      }
+
+      const grading = run.grading;
+      section.style.display = "block";
+      // Reset to collapsed
+      content.classList.remove("open");
+      document.getElementById("grades-arrow").classList.remove("open");
+
+      const summary = grading.summary || {};
+      const expectations = grading.expectations || [];
+
+      let html = '<div style="padding: 1rem;">';
+
+      // Summary line
+      const passRate = summary.pass_rate != null
+        ? Math.round(summary.pass_rate * 100) + "%"
+        : "?";
+      const badgeClass = summary.pass_rate >= 0.8 ? "grade-pass" : summary.pass_rate >= 0.5 ? "" : "grade-fail";
+      html += '<div class="grades-summary">';
+      html += '<span class="grade-badge ' + badgeClass + '">' + passRate + '</span>';
+      html += '<span>' + (summary.passed || 0) + ' 通过，' + (summary.failed || 0) + ' 未通过 / 共 ' + (summary.total || 0) + '</span>';
+      html += '</div>';
+
+      // Assertions list
+      html += '<ul class="assertion-list">';
+      for (const exp of expectations) {
+        const statusClass = exp.passed ? "pass" : "fail";
+        const statusIcon = exp.passed ? "\u2713" : "\u2717";
+        html += '<li class="assertion-item">';
+        html += '<span class="assertion-status ' + statusClass + '">' + statusIcon + '</span>';
+        html += '<span>' + escapeHtml(exp.text) + '</span>';
+        if (exp.evidence) {
+          html += '<div class="assertion-evidence">' + escapeHtml(exp.evidence) + '</div>';
+        }
+        html += '</li>';
+      }
+      html += '</ul>';
+
+      html += '</div>';
+      content.innerHTML = html;
+    }
+
+    function toggleGrades() {
+      const content = document.getElementById("grades-content");
+      const arrow = document.getElementById("grades-arrow");
+      content.classList.toggle("open");
+      arrow.classList.toggle("open");
+    }
+
+    // ---- Previous outputs (collapsible) ----
+    function renderPrevOutputs(run) {
+      const section = document.getElementById("prev-outputs-section");
+      const content = document.getElementById("prev-outputs-content");
+      const prevOutputs = (EMBEDDED_DATA.previous_outputs || {})[run.id];
+
+      if (!prevOutputs || prevOutputs.length === 0) {
+        section.style.display = "none";
+        return;
+      }
+
+      section.style.display = "block";
+      // Reset to collapsed
+      content.classList.remove("open");
+      document.getElementById("prev-outputs-arrow").classList.remove("open");
+
+      // Render the files into the content area
+      content.innerHTML = "";
+      const wrapper = document.createElement("div");
+      wrapper.style.padding = "1rem";
+
+      for (const file of prevOutputs) {
+        const fileDiv = document.createElement("div");
+        fileDiv.className = "output-file";
+
+        const header = document.createElement("div");
+        header.className = "output-file-header";
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = file.name;
+        header.appendChild(nameSpan);
+        const dlBtn = document.createElement("a");
+        dlBtn.className = "dl-btn";
+        dlBtn.textContent = "下载";
+        dlBtn.download = file.name;
+        dlBtn.href = getDownloadUri(file);
+        header.appendChild(dlBtn);
+        fileDiv.appendChild(header);
+
+        const fc = document.createElement("div");
+        fc.className = "output-file-content";
+
+        if (file.type === "text") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          fc.appendChild(pre);
+        } else if (file.type === "image") {
+          const img = document.createElement("img");
+          img.src = file.data_uri;
+          img.alt = file.name;
+          fc.appendChild(img);
+        } else if (file.type === "pdf") {
+          const iframe = document.createElement("iframe");
+          iframe.src = file.data_uri;
+          fc.appendChild(iframe);
+        } else if (file.type === "xlsx") {
+          renderXlsx(fc, file.data_b64);
+        } else if (file.type === "binary") {
+          const a = document.createElement("a");
+          a.className = "download-link";
+          a.href = file.data_uri;
+          a.download = file.name;
+          a.textContent = "下载 " + file.name;
+          fc.appendChild(a);
+        }
+
+        fileDiv.appendChild(fc);
+        wrapper.appendChild(fileDiv);
+      }
+
+      content.appendChild(wrapper);
+    }
+
+    function togglePrevOutputs() {
+      const content = document.getElementById("prev-outputs-content");
+      const arrow = document.getElementById("prev-outputs-arrow");
+      content.classList.toggle("open");
+      arrow.classList.toggle("open");
+    }
+
+    // ---- Feedback (saved to server -> feedback.json) ----
+    function saveCurrentFeedback() {
+      const run = EMBEDDED_DATA.runs[currentIndex];
+      const text = document.getElementById("feedback").value;
+
+      if (text.trim() === "") {
+        delete feedbackMap[run.id];
+      } else {
+        feedbackMap[run.id] = text;
+      }
+
+      // Build reviews array from map
+      const reviews = [];
+      for (const [run_id, feedback] of Object.entries(feedbackMap)) {
+        if (feedback.trim()) {
+          reviews.push({ run_id, feedback, timestamp: new Date().toISOString() });
+        }
+      }
+
+      fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviews, status: "in_progress" }),
+      }).then(() => {
+        document.getElementById("feedback-status").textContent = "已保存";
+      }).catch(() => {
+        // Static mode or server unavailable — no-op on auto-save,
+        // feedback will be downloaded on final submit
+        document.getElementById("feedback-status").textContent = "提交时下载";
+      });
+    }
+
+    // ---- Done ----
+    function showDoneDialog() {
+      // Save current textarea to feedbackMap (but don't POST yet)
+      const run = EMBEDDED_DATA.runs[currentIndex];
+      const text = document.getElementById("feedback").value;
+      if (text.trim() === "") {
+        delete feedbackMap[run.id];
+      } else {
+        feedbackMap[run.id] = text;
+      }
+
+      // POST once with status: complete — include ALL runs so the model
+      // can distinguish "no feedback" (looks good) from "not reviewed"
+      const reviews = [];
+      const ts = new Date().toISOString();
+      for (const r of EMBEDDED_DATA.runs) {
+        reviews.push({ run_id: r.id, feedback: feedbackMap[r.id] || "", timestamp: ts });
+      }
+      const payload = JSON.stringify({ reviews, status: "complete" }, null, 2);
+      fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      }).then(() => {
+        document.getElementById("done-overlay").classList.add("visible");
+      }).catch(() => {
+        // Server not reachable — fall back to downloading feedback as a file
+        const blob = new Blob([payload], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "feedback.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        document.getElementById("done-overlay").classList.add("visible");
+      });
+    }
+
+    function closeDoneDialog() {
+      // Reset status back to in_progress
+      saveCurrentFeedback();
+      document.getElementById("done-overlay").classList.remove("visible");
+    }
+
+    // ---- Toast ----
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("visible");
+      setTimeout(() => toast.classList.remove("visible"), 2000);
+    }
+
+    // ---- Keyboard nav ----
+    document.addEventListener("keydown", (e) => {
+      // Don't capture when typing in textarea
+      if (e.target.tagName === "TEXTAREA") return;
+
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        navigate(-1);
+      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        navigate(1);
+      }
+    });
+
+    // ---- Util ----
+    function getDownloadUri(file) {
+      if (file.data_uri) return file.data_uri;
+      if (file.data_b64) return "data:application/octet-stream;base64," + file.data_b64;
+      if (file.type === "text") return "data:text/plain;charset=utf-8," + encodeURIComponent(file.content);
+      return "#";
+    }
+
+    function escapeHtml(text) {
+      // 属性上下文（title="..."）也用这一个：转义引号，防逃逸
+      const div = document.createElement("div");
+      div.textContent = text == null ? "" : String(text);
+      return div.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    }
+
+    // ---- View switching ----
+    function switchView(view) {
+      document.querySelectorAll(".view-tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".view-panel").forEach(p => p.classList.remove("active"));
+      document.querySelector(`[onclick="switchView('${view}')"]`).classList.add("active");
+      document.getElementById("panel-" + view).classList.add("active");
+    }
+
+    // ---- 基准对比渲染 ----
+    function renderBenchmark() {
+      const data = EMBEDDED_DATA.benchmark;
+      if (!data) return;
+
+      // Show the tabs
+      document.getElementById("view-tabs").style.display = "flex";
+
+      const container = document.getElementById("benchmark-content");
+      const summary = data.run_summary || {};
+      const metadata = data.metadata || {};
+      const notes = data.notes || [];
+
+      let html = "";
+
+      // Header
+      html += "<h2 style='font-family: \"Source Sans 3\", sans-serif; margin-bottom: 0.5rem;'>基准对比结果</h2>";
+      html += "<p style='color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.25rem;'>";
+      if (metadata.skill_name) html += "<strong>" + escapeHtml(metadata.skill_name) + "</strong> &mdash; ";
+      if (metadata.timestamp) html += escapeHtml(metadata.timestamp) + " &mdash; ";
+      if (metadata.evals_run) html += "用例编号：" + escapeHtml(metadata.evals_run.join("，")) + " &mdash; ";
+      html += "每配置 " + (metadata.runs_per_configuration || "?") + " 次运行";
+      html += "</p>";
+
+      // Summary table
+      html += '<table class="benchmark-table">';
+
+      function fmtStat(stat, pct) {
+        if (!stat) return "—";
+        const suffix = pct ? "%" : "";
+        const m = pct ? (stat.mean * 100).toFixed(0) : stat.mean.toFixed(1);
+        const s = pct ? (stat.stddev * 100).toFixed(0) : stat.stddev.toFixed(1);
+        return m + suffix + " ± " + s + suffix;
+      }
+
+      // 反向指标：数值变小才是好（token少=省、耗时短=快），配色取反
+      function deltaClass(val, inverse = false) {
+        if (!val) return "";
+        const n = parseFloat(val);
+        const good = inverse ? n < 0 : n > 0;
+        const bad = inverse ? n > 0 : n < 0;
+        if (good) return "benchmark-delta-positive";
+        if (bad) return "benchmark-delta-negative";
+        return "";
+      }
+
+      // Discover config names dynamically (everything except "delta")
+      const configs = Object.keys(summary).filter(k => k !== "delta");
+      const configA = configs[0] || "config_a";
+      const configB = configs[1] || "config_b";
+      const labelA = configLabel(configA);
+      const labelB = configLabel(configB);
+      const a = summary[configA] || {};
+      const b = summary[configB] || {};
+      const delta = summary.delta || {};
+
+      html += "<thead><tr><th>指标</th><th>" + escapeHtml(labelA) + "</th><th>" + escapeHtml(labelB) + "</th><th>差值</th></tr></thead>";
+      html += "<tbody>";
+
+      html += "<tr><td><strong>通过率</strong></td>";
+      html += "<td>" + fmtStat(a.pass_rate, true) + "</td>";
+      html += "<td>" + fmtStat(b.pass_rate, true) + "</td>";
+      html += '<td class="' + deltaClass(delta.pass_rate) + '">' + (delta.pass_rate || "—") + "</td></tr>";
+
+      // Time (only show row if data exists)
+      if (a.time_seconds || b.time_seconds) {
+        html += "<tr><td><strong>耗时（秒）</strong></td>";
+        html += "<td>" + fmtStat(a.time_seconds, false) + "</td>";
+        html += "<td>" + fmtStat(b.time_seconds, false) + "</td>";
+        html += '<td class="' + deltaClass(delta.time_seconds, true) + '">' + (delta.time_seconds ? delta.time_seconds + "s" : "—") + "</td></tr>";
+      }
+
+      // token（仅有数据才显示该行）
+      if (a.tokens || b.tokens) {
+        html += "<tr><td><strong>token</strong></td>";
+        html += "<td>" + fmtStat(a.tokens, false) + "</td>";
+        html += "<td>" + fmtStat(b.tokens, false) + "</td>";
+        html += '<td class="' + deltaClass(delta.tokens, true) + '">' + (delta.tokens || "—") + "</td></tr>";
+      }
+
+      html += "</tbody></table>";
+
+      // Per-eval breakdown (if runs data available)
+      const runs = data.runs || [];
+      if (runs.length > 0) {
+        const evalIds = [...new Set(runs.map(r => r.eval_id))].sort((a, b) => a - b);
+
+        html += "<h3 style='font-family: \"Source Sans 3\", sans-serif; margin-bottom: 0.75rem;'>逐用例明细</h3>";
+
+        const hasTime = runs.some(r => r.result && r.result.time_seconds != null);
+        const hasErrors = runs.some(r => r.result && r.result.errors > 0);
+
+        for (const evalId of evalIds) {
+          const evalRuns = runs.filter(r => r.eval_id === evalId);
+          const evalName = evalRuns[0] && evalRuns[0].eval_name ? evalRuns[0].eval_name : "用例 " + evalId;
+
+          html += "<h4 style='font-family: \"Source Sans 3\", sans-serif; margin: 1rem 0 0.5rem; color: var(--text);'>" + escapeHtml(evalName) + "</h4>";
+          html += '<table class="benchmark-table">';
+          html += "<thead><tr><th>配置</th><th>运行</th><th>通过率</th>";
+          if (hasTime) html += "<th>耗时（秒）</th>";
+          if (hasErrors) html += "<th>执行中崩溃次数</th>";
+          html += "</tr></thead>";
+          html += "<tbody>";
+
+          // Group by config and render with average rows
+          const configGroups = [...new Set(evalRuns.map(r => r.configuration))];
+          for (let ci = 0; ci < configGroups.length; ci++) {
+            const config = configGroups[ci];
+            const configRuns = evalRuns.filter(r => r.configuration === config);
+            if (configRuns.length === 0) continue;
+
+            const rowClass = ci === 0 ? "benchmark-row-with" : "benchmark-row-without";
+            const configLabelText = configLabel(config);
+
+            for (const run of configRuns) {
+              const r = run.result || {};
+              const prClass = r.pass_rate >= 0.8 ? "benchmark-delta-positive" : r.pass_rate < 0.5 ? "benchmark-delta-negative" : "";
+              html += '<tr class="' + rowClass + '">';
+              html += "<td>" + escapeHtml(configLabelText) + "</td>";
+              html += "<td>" + run.run_number + "</td>";
+              html += '<td class="' + prClass + '">' + ((r.pass_rate || 0) * 100).toFixed(0) + "% (" + (r.passed || 0) + "/" + (r.total || 0) + ")</td>";
+              if (hasTime) html += "<td>" + (r.time_seconds != null ? r.time_seconds.toFixed(1) : "—") + "</td>";
+              if (hasErrors) html += "<td>" + (r.errors || 0) + "</td>";
+              html += "</tr>";
+            }
+
+            // Average row
+            const rates = configRuns.map(r => (r.result || {}).pass_rate || 0);
+            const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length;
+            const avgPrClass = avgRate >= 0.8 ? "benchmark-delta-positive" : avgRate < 0.5 ? "benchmark-delta-negative" : "";
+            html += '<tr class="benchmark-row-avg ' + rowClass + '">';
+            html += "<td>" + escapeHtml(configLabelText) + "</td>";
+            html += "<td>均值</td>";
+            html += '<td class="' + avgPrClass + '">' + (avgRate * 100).toFixed(0) + "%</td>";
+            if (hasTime) {
+              const times = configRuns.map(r => (r.result || {}).time_seconds).filter(t => t != null);
+              html += "<td>" + (times.length ? (times.reduce((a, b) => a + b, 0) / times.length).toFixed(1) : "—") + "</td>";
+            }
+            if (hasErrors) html += "<td></td>";
+            html += "</tr>";
+          }
+          html += "</tbody></table>";
+
+          // Per-assertion detail for this eval
+          const runsWithExpectations = {};
+          for (const config of configGroups) {
+            runsWithExpectations[config] = evalRuns.filter(r => r.configuration === config && r.expectations && r.expectations.length > 0);
+          }
+          const hasAnyExpectations = Object.values(runsWithExpectations).some(runs => runs.length > 0);
+          if (hasAnyExpectations) {
+            // Collect all unique assertion texts across all configs
+            const allAssertions = [];
+            const seen = new Set();
+            for (const config of configGroups) {
+              for (const run of runsWithExpectations[config]) {
+                for (const exp of (run.expectations || [])) {
+                  if (!seen.has(exp.text)) {
+                    seen.add(exp.text);
+                    allAssertions.push(exp.text);
+                  }
+                }
+              }
+            }
+
+            html += '<table class="benchmark-table" style="margin-top: 0.5rem;">';
+            html += "<thead><tr><th>判据</th>";
+            for (const config of configGroups) {
+              const label = configLabel(config);
+              html += "<th>" + escapeHtml(label) + "</th>";
+            }
+            html += "</tr></thead><tbody>";
+
+            for (const assertionText of allAssertions) {
+              html += "<tr><td>" + escapeHtml(assertionText) + "</td>";
+
+              for (const config of configGroups) {
+                html += "<td>";
+                for (const run of runsWithExpectations[config]) {
+                  const exp = (run.expectations || []).find(e => e.text === assertionText);
+                  if (exp) {
+                    const cls = exp.passed ? "benchmark-delta-positive" : "benchmark-delta-negative";
+                    const icon = exp.passed ? "\u2713" : "\u2717";
+                    html += '<span class="' + cls + '" title="运行 ' + run.run_number + ': ' + escapeHtml(exp.evidence || "") + '">' + icon + "</span> ";
+                  } else {
+                    html += "— ";
+                  }
+                }
+                html += "</td>";
+              }
+              html += "</tr>";
+            }
+            html += "</tbody></table>";
+          }
+        }
+      }
+
+      // Notes
+      if (notes.length > 0) {
+        html += '<div class="benchmark-notes">';
+        html += "<h3>分析笔记</h3>";
+        html += "<ul>";
+        for (const note of notes) {
+          html += "<li>" + escapeHtml(note) + "</li>";
+        }
+        html += "</ul></div>";
+      }
+
+      container.innerHTML = html;
+    }
+
+    // ---- 体检摘要（四维度，基准对比页顶） ----
+    function renderHealthSummary() {
+      const data = EMBEDDED_DATA.benchmark;
+      if (!data) return;
+      const container = document.getElementById("benchmark-content");
+      const summary = data.run_summary || {};
+      const configs = Object.keys(summary).filter(k => k !== "delta");
+      const mainCfg = configs.find(c => /with_skill|new_skill/.test(c));
+      const baseCfg = configs.find(c => /without_skill|old_skill/.test(c));
+      if (!mainCfg || !baseCfg) return;
+
+      const m = summary[mainCfg] || {}, b = summary[baseCfg] || {}, d = summary.delta || {};
+      const rows = [];
+
+      // ① 通过率差值
+      const prDelta = (d.pass_rate != null ? d.pass_rate : (m.pass_rate || {}).mean - (b.pass_rate || {}).mean);
+      let prVerdict, prClass;
+      if (prDelta >= 0.2) { prVerdict = "优：技能有真贡献"; prClass = "benchmark-delta-positive"; }
+      else if (prDelta >= 0.05) { prVerdict = "弱：贡献有限，考虑改进"; prClass = ""; }
+      else if (prDelta >= -0.05) { prVerdict = "多余：模型本来就会"; prClass = ""; }
+      else { prVerdict = "有害：技能在帮倒忙，必须重写"; prClass = "benchmark-delta-negative"; }
+      rows.push(["通过率差值", (prDelta >= 0 ? "+" : "") + (prDelta * 100).toFixed(0) + "%", prVerdict, prClass]);
+
+      // ② 判据区分度：基线组不过 + 技能组过的判据占比
+      let disc = 0, total = 0;
+      for (const r of (data.runs || [])) {
+        if (r.configuration !== mainCfg) continue;
+        const baseRun = (data.runs || []).find(x => x.eval_id === r.eval_id && x.run_number === r.run_number && x.configuration === baseCfg);
+        for (const exp of (r.expectations || [])) {
+          total++;
+          const baseExp = baseRun && (baseRun.expectations || []).find(e => e.text === exp.text);
+          if (exp.passed && baseExp && baseExp.passed === false) disc++;
+        }
+      }
+      if (total > 0) {
+        const ratio = disc / total;
+        rows.push(["判据区分度", disc + "/" + total + " 条", ratio >= 0.15 ? "健康：" + Math.round(ratio * 100) + "% 的判据靠技能通过" : "偏低：技能贡献集中在少数判据", ratio >= 0.15 ? "benchmark-delta-positive" : ""]);
+      }
+
+      // ④ 成本与稳定性
+      const tokM = (m.tokens || {}).mean, tokB = (b.tokens || {}).mean;
+      if (tokM && tokB) {
+        const tokDelta = (tokM - tokB) / tokB;
+        rows.push(["token成本", (tokDelta >= 0 ? "+" : "") + (tokDelta * 100).toFixed(0) + "%", tokDelta <= 0 ? "更省：技能让模型少走弯路" : "更贵：" + Math.round(tokDelta * 100) + "%，看是否值回票价", tokDelta <= 0 ? "benchmark-delta-positive" : ""]);
+      }
+      const stdM = (m.pass_rate || {}).stddev;
+      if (stdM != null && stdM > 0.2) {
+        rows.push(["稳定性", "±" + (stdM * 100).toFixed(0) + "%", "⚠️ 方差过大，同用例多次跑分数不稳", "benchmark-delta-negative"]);
+      }
+
+      // ③ 触发率（从 trigger_report 读，无则提示）
+      const tr = EMBEDDED_DATA.trigger_report;
+      if (tr) {
+        const testScore = tr.best_test_score;
+        if (testScore) {
+          const frac = testScore.split("/");
+          const pct = frac.length === 2 ? parseInt(frac[0]) / parseInt(frac[1]) : null;
+          rows.push(["触发留出集", testScore, pct != null ? (pct >= 0.85 ? "优（≥85%）" : pct >= 0.7 ? "合格，可再优化" : "差，description 需重写") : "", pct >= 0.85 ? "benchmark-delta-positive" : (pct != null && pct < 0.7 ? "benchmark-delta-negative" : "")]);
+        }
+      } else {
+        rows.push(["触发留出集", "—", "未优化：技能定稿后跑 description 优化（见「触发优化」标签页）", ""]);
+      }
+
+      let html = "<div style='margin-bottom:1.75rem;'>";
+      html += "<div style='display:flex;align-items:baseline;gap:0.5rem;margin-bottom:0.875rem;'>";
+      html += "<h3 style='font-family:\"Source Sans 3\",sans-serif;margin:0;font-size:1rem;font-weight:400;'>体检摘要</h3>";
+      html += "<span style='font-size:0.75rem;color:var(--text-muted);'>四维度判定这技能好不好</span></div>";
+      html += "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1rem;'>";
+      for (const [dim, val, verdict, cls] of rows) {
+        const good = cls === "benchmark-delta-positive";
+        const bad = cls === "benchmark-delta-negative";
+        const border = good ? "rgba(21,190,83,0.4)" : bad ? "rgba(234,34,97,0.4)" : "var(--border)";
+        const bg = good ? "rgba(21,190,83,0.05)" : bad ? "rgba(234,34,97,0.04)" : "var(--surface)";
+        const color = good ? "var(--green-text)" : bad ? "var(--red-text)" : "var(--text)";
+        const icon = good ? "✓" : bad ? "✕" : "·";
+        html += "<div style='background:" + bg + ";border:1px solid " + border + ";border-radius:6px;padding:1rem 1.125rem;box-shadow:var(--shadow-soft);'>";
+        html += "<div style='display:flex;justify-content:space-between;align-items:baseline;'>";
+        html += "<span style='font-family:\"Source Sans 3\",sans-serif;font-size:0.75rem;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;'>" + dim + "</span>";
+        html += "<span style='font-weight:600;font-size:0.85rem;color:" + color + ";'>" + icon + "</span></div>";
+        html += "<div style='font-size:1.75rem;font-weight:300;letter-spacing:-0.02em;margin:0.3rem 0 0.375rem;font-variant-numeric:tabular-nums;'>" + val + "</div>";
+        html += "<div style='font-size:0.8rem;color:var(--text-muted);'>" + verdict + "</div>";
+        html += "</div>";
+      }
+      html += "</div></div>";
+      container.insertAdjacentHTML("afterbegin", html);
+    }
+
+    // ---- Trigger report rendering（description 优化结果） ----
+    function renderTrigger() {
+      const tr = EMBEDDED_DATA.trigger_report;
+      if (!tr) return;
+      document.getElementById("tab-trigger").style.display = "";
+      const container = document.getElementById("trigger-content");
+      let html = "<h2 style='font-family:\"Source Sans 3\",sans-serif;margin-bottom:0.5rem;'>触发优化报告</h2>";
+
+      // 最终分数
+      html += "<div style='display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;'>";
+      html += "<div style='flex:1;min-width:200px;background:rgba(21,190,83,0.08);border:1px solid rgba(21,190,83,0.4);border-radius:12px;padding:1rem 1.25rem;box-shadow:var(--shadow);'>";
+      html += "<div style='font-size:0.75rem;color:var(--text-muted);'>留出集最终分数（防过拟合依据）</div>";
+      html += "<div style='font-size:2rem;font-weight:700;color:var(--green);'>" + (tr.best_test_score || "—") + "</div></div>";
+      html += "<div style='flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;box-shadow:var(--shadow);'>";
+      html += "<div style='font-size:0.75rem;color:var(--text-muted);'>训练集分数</div>";
+      html += "<div style='font-size:2rem;font-weight:700;'>" + (tr.best_train_score || "—") + "</div></div>";
+      html += "<div style='flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;box-shadow:var(--shadow);'>";
+      html += "<div style='font-size:0.75rem;color:var(--text-muted);'>优化轮数 / 退出原因</div>";
+      html += "<div style='font-size:2rem;font-weight:700;'>" + (tr.iterations_run || "—") + " 轮</div>";
+      html += "<div style='font-size:0.75rem;color:var(--text-muted);'>" + escapeHtml(tr.exit_reason || "") + "</div></div></div>";
+
+      // 每轮迭代分数：SVG 双折线图（train=紫 test=绿，train 涨 test 不涨=过拟合）
+      const history = tr.history || [];
+      if (history.length) {
+        const W = 640, H = 200, PAD = 36;
+        const maxN = Math.max(...history.map(h => Math.max(h.train_total || 1, h.test_total || 1)));
+        const xs = i => PAD + i * ((W - PAD * 2) / Math.max(history.length - 1, 1));
+        const ys = v => H - PAD - (v / maxN) * (H - PAD * 2);
+        const line = key => history.map((h, i) => (i ? "L" : "M") + xs(i).toFixed(1) + "," + ys(h[key] || 0).toFixed(1)).join(" ");
+        const trainPts = history.map(h => h.train_total ? (h.train_passed || 0) / h.train_total : 0);
+        const testPts = history.map(h => h.test_total ? (h.test_passed || 0) / h.test_total : 0);
+        const rline = pts => pts.map((v, i) => (i ? "L" : "M") + xs(i).toFixed(1) + "," + ys(v * maxN).toFixed(1)).join(" ");
+        html += "<h3 style='font-family:\"Source Sans 3\",sans-serif;margin-top:0.5rem;'>逐轮分数</h3>";
+        html += "<div style='background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:1rem;box-shadow:var(--shadow-soft);margin-bottom:1.5rem;'>";
+        html += "<svg viewBox='0 0 " + W + " " + H + "' style='width:100%;height:auto;display:block;'>";
+        html += "<line x1='" + PAD + "' y1='" + (H - PAD) + "' x2='" + (W - PAD) + "' y2='" + (H - PAD) + "' style='stroke:var(--border)'/>";
+        for (let g = 0; g <= 4; g++) {
+          const y = PAD + g * ((H - PAD * 2) / 4);
+          html += "<line x1='" + PAD + "' y1='" + y + "' x2='" + (W - PAD) + "' y2='" + y + "' style='stroke:var(--surface-alt)'/>";
+          html += "<text x='" + (PAD - 6) + "' y='" + (y + 3) + "' font-size='9' style='fill:var(--text-muted)' text-anchor='end'>" + Math.round(maxN * (4 - g) / 4) + "</text>";
+        }
+        history.forEach((h, i) => {
+          html += "<text x='" + xs(i) + "' y='" + (H - PAD + 14) + "' font-size='9' style='fill:var(--text-muted)' text-anchor='middle'>第" + (h.iteration || i + 1) + "轮</text>";
+        });
+        html += "<path d='" + rline(trainPts) + "' fill='none' style='stroke:var(--accent)' stroke-width='2'/>";
+        html += "<path d='" + rline(testPts) + "' fill='none' style='stroke:var(--green)' stroke-width='2'/>";
+        trainPts.forEach((v, i) => html += "<circle cx='" + xs(i) + "' cy='" + ys(v * maxN) + "' r='3' style='fill:var(--accent)'/>");
+        testPts.forEach((v, i) => html += "<circle cx='" + xs(i) + "' cy='" + ys(v * maxN) + "' r='3' style='fill:var(--green)'/>");
+        html += "</svg>";
+        html += "<div style='display:flex;gap:1.25rem;font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem;'>";
+        html += "<span><span style='display:inline-block;width:10px;height:2px;background:var(--accent);vertical-align:middle;margin-right:4px;'></span>训练集通过数</span>";
+        html += "<span><span style='display:inline-block;width:10px;height:2px;background:var(--green);vertical-align:middle;margin-right:4px;'></span>留出集通过数（两条线不同步上涨=过拟合）</span></div>";
+        // 数值小表
+        html += "<table class='benchmark-table' style='margin-top:0.75rem;margin-bottom:0;'><thead><tr><th>轮次</th><th>训练集</th><th>留出集</th></tr></thead><tbody>";
+        for (const h of history) {
+          const train = (h.train_passed != null && h.train_total) ? h.train_passed + "/" + h.train_total : "—";
+          const test = (h.test_passed != null && h.test_total) ? h.test_passed + "/" + h.test_total : "—";
+          const overfit = h.test_passed != null && h.train_total && (h.train_passed / h.train_total) - (h.test_passed / (h.test_total || 1)) > 0.2;
+          html += "<tr><td>" + (h.iteration || "—") + "</td><td>" + train + "</td><td class='" + (overfit ? "benchmark-delta-negative" : "") + "'>" + test + (overfit ? " ⚠️疑似过拟合" : "") + "</td></tr>";
+        }
+        html += "</tbody></table></div>";
+      }
+
+      // description 前后对比
+      html += "<h3 style='font-family:\"Source Sans 3\",sans-serif;margin-top:1.25rem;'>技能描述前后对比</h3>";
+      html += "<div style='display:grid;grid-template-columns:1fr 1fr;gap:1rem;'>";
+      html += "<div style='background:rgba(234,34,97,0.06);border:1px solid rgba(234,34,97,0.4);border-radius:12px;padding:0.875rem 1rem;'><div style='font-size:0.75rem;color:var(--text-muted);margin-bottom:0.5rem;'>优化前</div><div style='font-size:0.875rem;'>" + escapeHtml(tr.original_description || "") + "</div></div>";
+      html += "<div style='background:rgba(21,190,83,0.08);border:1px solid rgba(21,190,83,0.4);border-radius:12px;padding:0.875rem 1rem;'><div style='font-size:0.75rem;color:var(--text-muted);margin-bottom:0.5rem;'>最优版</div><div style='font-size:0.875rem;'>" + escapeHtml(tr.best_description || "") + "</div></div>";
+      html += "</div>";
+
+      // 每条查询触发明细（真正取分数最高的轮，与"最优版 description"对应；最后一轮≠最优）
+      const bestIter = history.length ? history.reduce((a, b) => ((b.test_passed ?? -1) > (a.test_passed ?? -1) ? b : a)) : null;
+      const details = bestIter && (bestIter.test_results || bestIter.results || []);
+      if (details.length) {
+        html += "<h3 style='font-family:\"Source Sans 3\",sans-serif;margin-top:1.25rem;'>查询触发明细</h3>";
+        html += "<table class='benchmark-table'><thead><tr><th>查询</th><th>应触发</th><th>实际触发</th><th>结果</th></tr></thead><tbody>";
+        for (const r of details) {
+          const ok = r.pass;
+          html += "<tr><td style='max-width:480px;'>" + escapeHtml((r.query || "").slice(0, 80)) + "</td><td>" + (r.should_trigger ? "✓" : "✗") + "</td><td>" + (r.triggers || 0) + "/" + (r.runs || 0) + "</td><td class='" + (ok ? "benchmark-delta-positive" : "benchmark-delta-negative") + "'>" + (ok ? "✓" : "✗") + "</td></tr>";
+        }
+        html += "</tbody></table>";
+      }
+
+      container.innerHTML = html;
+    }
+
+    // ---- Poster rendering（合并版摘要，首屏标签） ----
+    function donutSvg(pct, color, label, sub, size = 110) {
+      const r = size / 2 - 10, c = 2 * Math.PI * r;
+      return "<svg viewBox='0 0 " + size + " " + size + "' width='" + size + "' height='" + size + "'>" +
+        "<circle cx='" + size / 2 + "' cy='" + size / 2 + "' r='" + r + "' fill='none' style='stroke:var(--surface-alt)' stroke-width='10'/>" +
+        "<circle cx='" + size / 2 + "' cy='" + size / 2 + "' r='" + r + "' fill='none' stroke='" + color + "' stroke-width='10' stroke-dasharray='" + (c * Math.min(pct, 1)).toFixed(1) + " " + c.toFixed(1) + "' stroke-linecap='round' transform='rotate(-90 " + size / 2 + " " + size / 2 + ")'/>" +
+        "<text x='50%' y='47%' text-anchor='middle' font-size='20' font-weight='300' style='fill:var(--text)'>" + label + "</text>" +
+        "<text x='50%' y='62%' text-anchor='middle' font-size='9' style='fill:var(--text-muted)'>" + sub + "</text></svg>";
+    }
+
+    function barRow(label, pct, color, valText) {
+      return "<div><div style='display:flex;justify-content:space-between;font-size:12px;color:var(--label);margin-bottom:4px;'><span>" + label + "</span><span style='font-variant-numeric:tabular-nums;'>" + valText + "</span></div>" +
+        "<div style='height:8px;background:var(--surface-alt);border-radius:4px;overflow:hidden;'><div style='width:" + (pct * 100).toFixed(0) + "%;height:100%;background:" + color + ";border-radius:4px;'></div></div></div>";
+    }
+
+    function renderPoster() {
+      const data = EMBEDDED_DATA.benchmark;
+      if (!data) return;
+      document.getElementById("view-tabs").style.display = "flex";
+      const container = document.getElementById("poster-content");
+      const summary = data.run_summary || {};
+      const configs = Object.keys(summary).filter(k => k !== "delta");
+      const mainCfg = configs.find(c => /with_skill|new_skill/.test(c));
+      const baseCfg = configs.find(c => /without_skill|old_skill/.test(c));
+      if (!mainCfg || !baseCfg) return;
+      const m = summary[mainCfg] || {}, b = summary[baseCfg] || {}, delta = summary.delta || {};
+      const metadata = data.metadata || {};
+
+      // 综合评级（三级：A ≥+25%，B ≥+10%，C 其他；再按体积三区阶梯调整）
+      let prDelta = parseFloat(String(delta.pass_rate || "0").replace("+", "")) || 0;
+      const grade = prDelta >= 0.25 ? "A" : prDelta >= 0.1 ? "B" : "C";
+      let gradeColor = grade === "A" ? "var(--green-text)" : grade === "B" ? "var(--amber)" : "var(--red-text)";
+      const prM = ((m.pass_rate || {}).mean) || 0, prB = ((b.pass_rate || {}).mean) || 0;
+      const tokM = ((m.tokens || {}).mean) || 0, tokB = ((b.tokens || {}).mean) || 0;
+      const tokDelta = tokM && tokB ? (tokM - tokB) / tokB : 0;
+
+      // 本体体积三区阈值与token口径见 references/writing-rules.md「完整 SKILL.md 的体积」
+      const size = metadata.skill_size || {};
+      const szChars = size.chars || 0, szTok = size.tokens_est || 0, szLines = size.lines || 0;
+      const sizeZone = (szChars > 13000 || szTok > 11300 || szLines > 360) ? "alert"
+        : (szChars > 8000 || szTok > 7000 || szLines > 200) ? "normal" : "comfort";
+      // 体积阶梯：舒适区不扣；一般区封顶 B；警报区降一档（A→B→C），体积环同步标黄
+      let gradeLetter = grade;
+      if (sizeZone === "alert") {
+        gradeLetter = grade === "A" ? "B" : "C";
+      } else if (sizeZone === "normal" && gradeLetter === "A") {
+        gradeLetter = "B";
+      }
+      gradeColor = gradeLetter === "A" ? "var(--green-text)" : gradeLetter === "B" ? "var(--amber)" : "var(--red-text)";
+      const sizeColor = sizeZone === "alert" ? "var(--amber)" : "var(--accent)";
+      let sizeText = szTok ? Math.round(szTok / 100) / 10 + "k" : "—";
+
+      // 判据区分度
+      let disc = 0, total = 0;
+      for (const r of (data.runs || [])) {
+        if (r.configuration !== mainCfg) continue;
+        const baseRun = (data.runs || []).find(x => x.eval_id === r.eval_id && x.run_number === r.run_number && x.configuration === baseCfg);
+        for (const exp of (r.expectations || [])) {
+          total++;
+          const baseExp = baseRun && (baseRun.expectations || []).find(e => e.text === exp.text);
+          if (exp.passed && baseExp && baseExp.passed === false) disc++;
+        }
+      }
+
+      // 触发留出集
+      const tr = EMBEDDED_DATA.trigger_report;
+      let trigPct = 0, trigText = "—";
+      if (tr && tr.best_test_score && tr.best_test_score.includes("/")) {
+        const [p, t] = tr.best_test_score.split("/");
+        trigPct = parseInt(p) / parseInt(t); trigText = tr.best_test_score;
+      }
+
+      // 优化曲线
+      const hist = tr ? (tr.history || []) : [];
+      let curveSvg = "";
+      if (hist.length) {
+        const W = 520, H = 150, PAD = 30;
+        const maxN = Math.max(...hist.map(h => Math.max(h.train_total || 1, h.test_total || 1)));
+        const xs = i => PAD + i * ((W - PAD * 2) / Math.max(hist.length - 1, 1));
+        const ys = v => H - PAD - (v / maxN) * (H - PAD * 2);
+        const mk = k => hist.map((h, i) => (i ? "L" : "M") + xs(i).toFixed(1) + "," + ys(((h[k + "_passed"] || 0) / (h[k + "_total"] || 1)) * maxN).toFixed(1)).join(" ");
+        const dots = (k, col) => hist.map((h, i) => "<circle cx='" + xs(i).toFixed(1) + "' cy='" + ys(((h[k + "_passed"] || 0) / (h[k + "_total"] || 1)) * maxN).toFixed(1) + "' r='3' fill='" + col + "'/>").join("");
+        curveSvg = "<svg viewBox='0 0 " + W + " " + H + "' style='width:100%;height:auto;'>" +
+          "<path d='" + mk("train") + "' fill='none' style='stroke:var(--accent)' stroke-width='2'/>" + dots("train", "var(--accent)") +
+          "<path d='" + mk("test") + "' fill='none' style='stroke:var(--green)' stroke-width='2'/>" + dots("test", "var(--green)") + "</svg>";
+      }
+
+      let html = "<h2 style='font-family:\"Source Sans 3\",sans-serif;font-size:26px;font-weight:300;letter-spacing:-0.4px;margin-bottom:0.25rem;'>" + escapeHtml(EMBEDDED_DATA.skill_name || "") + " <span style='font-size:15px;color:var(--text-muted);font-weight:400;'>技能评测摘要</span></h2>";
+      html += "<div style='font-size:13px;color:var(--text-muted);margin-bottom:1.75rem;font-variant-numeric:tabular-nums;'>" + escapeHtml(metadata.timestamp || "") + " · 共 " + (data.runs || []).length + " 次运行 · 执行模型 " + escapeHtml(metadata.executor_model || "") + "</div>";
+
+      html += "<div style='display:grid;grid-template-columns:150px 1fr 1fr;gap:1.5rem;align-items:center;margin-bottom:1.5rem;'>";
+      html += "<div style='text-align:center;border:1px solid var(--border);border-radius:6px;padding:1rem;box-shadow:var(--shadow-soft);'><div style='font-size:72px;font-weight:300;line-height:1;color:" + gradeColor + ";'>" + gradeLetter + "</div><div style='font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;'>综合评级</div><div style='font-size:11px;color:" + (sizeZone === "comfort" ? "var(--text-muted)" : "var(--amber)") + ";margin-top:2px;'>" + (sizeZone === "alert" ? "体积警报区 · 已降一档" : sizeZone === "normal" ? "体积一般区 · 封顶 B" : "体积舒适区") + "</div></div>";
+      html += "<div style='border-left:1px solid var(--border);padding-left:1.5rem;'>";
+      html += "<div style='font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;'>通过率（技能组 vs 基线组）</div>";
+      html += barRow("技能组", prM, "var(--accent)", (prM * 100).toFixed(0) + "%");
+      html += "<div style='height:10px;'></div>";
+      html += barRow("基线", prB, "var(--purple-light)", (prB * 100).toFixed(0) + "%");
+      html += "<div style='font-size:12px;color:" + gradeColor + ";margin-top:10px;'>技能贡献 " + (prDelta >= 0 ? "+" : "−") + Math.abs(prDelta * 100).toFixed(0) + "% · 区分度判据 " + disc + "/" + total + "</div></div>";
+      html += "<div style='border-left:1px solid var(--border);padding-left:1.5rem;display:flex;gap:1.25rem;align-items:center;'>";
+      html += donutSvg(tokM && tokB ? Math.min(Math.abs(tokDelta), 1) : 0, tokDelta <= 0 ? "var(--accent)" : "var(--amber)", Math.abs(tokDelta * 100).toFixed(0) + "%", "token成本·更" + (tokDelta <= 0 ? "省" : "贵"));
+      html += donutSvg(trigPct, trigPct >= 0.85 ? "var(--accent)" : "var(--amber)", trigText, "触发留出集");
+      html += donutSvg(Math.min(szTok / 11300, 1), sizeColor, sizeText, "本体体积·" + (szLines || "—") + " 行");
+      html += "</div></div>";
+
+      // 体积与消耗摘要行：本体token/行数 · 技能组 vs 基线组每次运行消耗
+      html += "<div style='display:flex;gap:1.5rem;font-size:12px;color:var(--label);margin-bottom:1.5rem;font-variant-numeric:tabular-nums;'>";
+      html += "<span>本体体积 <b>" + (szTok ? szTok.toLocaleString() + " token" : "—") + "</b> / " + (szLines || "—") + " 行 / " + (szChars ? szChars.toLocaleString() + " 字符" : "—") + (sizeZone === "alert" ? "（警报区）" : sizeZone === "normal" ? "（一般区）" : "") + "</span>";
+      html += "<span>运行消耗（均/次） 技能组 <b>" + (tokM ? Math.round(tokM).toLocaleString() + " token" : "—") + "</b> · 基线 <b>" + (tokB ? Math.round(tokB).toLocaleString() + " token" : "—") + "</b> · 差值 <b>" + (tokM && tokB ? (tokM - tokB >= 0 ? "+" : "") + Math.round(tokM - tokB).toLocaleString() + " token" : "—") + "</b></span>";
+      html += "</div>";
+
+      if (curveSvg) {
+        html += "<div style='border:1px solid var(--border);border-radius:6px;padding:1rem 1.25rem;box-shadow:var(--shadow-soft);'>";
+        html += "<div style='font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>触发优化曲线</div>" + curveSvg;
+        html += "<div style='display:flex;gap:1.25rem;font-size:11px;color:var(--text-muted);margin-top:6px;'><span><i style='display:inline-block;width:10px;height:2px;background:var(--accent);vertical-align:middle;margin-right:4px;'></i>训练集</span><span><i style='display:inline-block;width:10px;height:2px;background:var(--green);vertical-align:middle;margin-right:4px;'></i>留出集（防过拟合）</span></div></div>";
+      }
+      html += "<div style='font-size:11px;color:var(--text-muted);margin-top:1.25rem;font-family:\"Source Code Pro\",monospace;'>明细见「输出」「基准对比」「触发优化」标签页 · 由 skill-creator-hermes 生成</div>";
+      container.innerHTML = html;
+    }
+
+    // ---- Start ----
+    init();
+    renderBenchmark();
+    renderTrigger();
+    renderHealthSummary();
+    renderPoster();
+
+    // ---- Heartbeat: 页面存活期间每 5s ping 一次服务器，服务器据此判活；
+    // 页面关闭即停跳，服务器 idle-timeout 后自动释放。非服务器环境（file://）静默跳过 ----
+    (function heartbeat() {
+      if (location.protocol === "file:") return;
+      fetch("/ping", { method: "GET" }).catch(function() {});
+      setInterval(function() { fetch("/ping", { method: "GET" }).catch(function() {}); }, 5000);
+    })();
+  </script>
+</body>
+</html>

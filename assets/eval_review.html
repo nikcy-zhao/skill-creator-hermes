@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>触发评测集审查 - __SKILL_NAME_PLACEHOLDER__</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;500;600&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Stripe 设计系统变量，三页（viewer/eval_review/报告）共用同一套 */
+      --border: #e5edf5;
+      --text: #061b31;
+      --text-muted: #64748d;
+      --accent: #533afd;
+      --accent-hover: #4434d4;
+      --purple-light: #b9b9f9;
+      --red: #ea2261;
+      --label: #273951;
+      --surface-alt: #f0f4f9;
+      --toggle-off: #c9d4e3;
+      --bg-doc: #f6f9fc;
+      --shadow-ambient: rgba(23,23,23,0.08) 0px 15px 35px 0px;
+    }
+    .header {
+      background: rgba(83, 58, 253, 0.06);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2.5rem;
+      margin: -2.5rem -2.5rem 1.75rem;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Source Sans 3', system-ui, sans-serif; font-feature-settings: "ss01"; background: var(--bg-doc); padding: 2.5rem; color: var(--text); }
+    .kicker { font-family: 'Source Code Pro', monospace; font-size: 0.7rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.14em; margin-bottom: 0.4rem; }
+    h1 { font-size: 1.75rem; font-weight: 300; letter-spacing: -0.35px; margin-bottom: 0.5rem; }
+    h1 b { font-weight: 600; }
+    .description { color: var(--text-muted); margin-bottom: 1.75rem; font-size: 0.9rem; max-width: 900px; line-height: 1.5; }
+    .controls { margin-bottom: 1rem; display: flex; gap: 0.5rem; }
+    .btn { font-family: 'Source Sans 3', sans-serif; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; font-size: 0.875rem; font-weight: 400; }
+    .btn-add { background: transparent; color: var(--accent); border: 1px solid var(--purple-light); }
+    .btn-add:hover { background: rgba(83,58,253,0.05); }
+    .btn-export { background: var(--accent); color: white; }
+    .btn-export:hover { background: var(--accent-hover); }
+    table { width: 100%; max-width: 1100px; border-collapse: separate; border-spacing: 0; background: white; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; box-shadow: var(--shadow-ambient); }
+    th { font-family: 'Source Sans 3', sans-serif; background: var(--bg-doc); color: var(--label); padding: 0.75rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+    td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--surface-alt); vertical-align: top; font-size: 0.875rem; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg-doc); }
+    .section-header td { background: var(--surface-alt); font-weight: 600; font-size: 0.75rem; color: var(--label); text-transform: uppercase; letter-spacing: 0.05em; }
+    .query-input { width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; font-size: 0.875rem; font-family: 'Source Sans 3', sans-serif; resize: vertical; min-height: 60px; color: var(--text); }
+    .query-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(83,58,253,0.15); }
+    .toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle .slider { position: absolute; inset: 0; background: var(--toggle-off); border-radius: 24px; cursor: pointer; transition: 0.2s; }
+    .toggle .slider::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+    .toggle input:checked + .slider { background: var(--accent); }
+    .toggle input:checked + .slider::before { transform: translateX(20px); }
+    .btn-delete { background: transparent; color: var(--red); border: 1px solid rgba(234,34,97,0.4); padding: 0.3rem 0.7rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-family: 'Source Sans 3', sans-serif; }
+    .btn-delete:hover { background: rgba(234,34,97,0.06); }
+    .summary { margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="kicker">Trigger Eval Set Review</div>
+    <h1><b>触发评测集审查</b> · <span id="skill-name">__SKILL_NAME_PLACEHOLDER__</span></h1>
+    <p class="description">当前 description：<span id="skill-desc">__SKILL_DESCRIPTION_PLACEHOLDER__</span></p>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-add" onclick="addRow()">+ 添加查询</button>
+    <button class="btn btn-export" onclick="exportEvalSet()">导出评测集</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:65%">查询</th>
+        <th style="width:18%">应触发</th>
+        <th style="width:10%">操作</th>
+      </tr>
+    </thead>
+    <tbody id="eval-body"></tbody>
+  </table>
+
+  <p class="summary" id="summary"></p>
+
+  <script>
+    const EVAL_DATA = __EVAL_DATA_PLACEHOLDER__;
+
+    let evalItems = [...EVAL_DATA];
+
+    function render() {
+      const tbody = document.getElementById('eval-body');
+      tbody.innerHTML = '';
+
+      const sorted = evalItems
+        .map((item, origIdx) => ({ ...item, origIdx }))
+        .sort((a, b) => (b.should_trigger ? 1 : 0) - (a.should_trigger ? 1 : 0));
+
+      let lastGroup = null;
+      sorted.forEach(item => {
+        const group = item.should_trigger ? 'trigger' : 'no-trigger';
+        if (group !== lastGroup) {
+          const headerRow = document.createElement('tr');
+          headerRow.className = 'section-header';
+          headerRow.innerHTML = `<td colspan="3">${item.should_trigger ? '应触发' : '不应触发'}</td>`;
+          tbody.appendChild(headerRow);
+          lastGroup = group;
+        }
+
+        const idx = item.origIdx;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><textarea class="query-input" onchange="updateQuery(${idx}, this.value)">${escapeHtml(item.query)}</textarea></td>
+          <td>
+            <label class="toggle">
+              <input type="checkbox" ${item.should_trigger ? 'checked' : ''} onchange="updateTrigger(${idx}, this.checked)">
+              <span class="slider"></span>
+            </label>
+            <span style="margin-left:8px;font-size:0.8rem;color:var(--text-muted)">${item.should_trigger ? '是' : '否'}</span>
+          </td>
+          <td><button class="btn-delete" onclick="deleteRow(${idx})">删除</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+      updateSummary();
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function updateQuery(idx, value) { evalItems[idx].query = value; updateSummary(); }
+    function updateTrigger(idx, value) { evalItems[idx].should_trigger = value; render(); }
+    function deleteRow(idx) { evalItems.splice(idx, 1); render(); }
+
+    function addRow() {
+      evalItems.push({ query: '', should_trigger: true });
+      render();
+      const inputs = document.querySelectorAll('.query-input');
+      inputs[inputs.length - 1].focus();
+    }
+
+    function updateSummary() {
+      const trigger = evalItems.filter(i => i.should_trigger).length;
+      const noTrigger = evalItems.filter(i => !i.should_trigger).length;
+      document.getElementById('summary').textContent =
+        `共 ${evalItems.length} 条查询：${trigger} 条应触发，${noTrigger} 条不应触发`;
+    }
+
+    function exportEvalSet() {
+      const valid = evalItems.filter(i => i.query.trim() !== '');
+      const data = valid.map(i => ({ query: i.query.trim(), should_trigger: i.should_trigger }));
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'eval_set.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    render();
+  </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 ---
 name: skill-creator-hermes
 description: 创建技能、检测、改进、优化、精简、重构、评测指定技能
-version: 2.35.2
+version: 0.1.0
 author: cat, Hermes Agent
 license: Apache-2.0
 platforms: [linux, macos]

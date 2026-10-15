@@ -488,5 +488,35 @@ class TestPrecheckGhostPath(unittest.TestCase):
         self.assertIn("幽灵路径", r.stderr)
 
 
+class TestPrecheckRepoMeta(unittest.TestCase):
+    """仓库元文件豁免：根 README.md 与 .git/ 只在源库是设计（README 是门面不进副本），
+    不得判成死资产或副本不同步。"""
+
+    def _mk_skill_with_repo_meta(self, td):
+        skill = td / "demo-repo"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: demo-repo\ndescription: d\n---\n\n# demo-repo\n\n## When to Use\n\nx\n\n"
+            "## Procedure\n\ny\n\n## Pitfalls\n\nz\n\n## Verification\n\nw\n", encoding="utf-8")
+        # 根 README（GitHub 门面，消费方是人不在库内）与 .git（仓库元数据）：只在源库
+        (skill / "README.md").write_text("# 门面\n", encoding="utf-8")
+        obj = skill / ".git" / "objects" / "ab"
+        obj.mkdir(parents=True)
+        (skill / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        (obj / "c0ffee").write_text("blob\n", encoding="utf-8")
+        return skill
+
+    def test_git_and_root_readme_not_flags(self):
+        skill = self._mk_skill_with_repo_meta(_tempdir(self))
+        deploy = skill.parent / "deploy-copy"
+        shutil.copytree(skill, deploy, ignore=shutil.ignore_patterns(".git", "README.md"))
+        r = subprocess.run([sys.executable, "-m", "scripts.precheck_deliver", str(skill),
+                            "--deploy", str(deploy)], capture_output=True, text=True,
+                           cwd=REPO_ROOT, timeout=60)
+        self.assertNotIn("副本不同步", r.stderr)
+        self.assertNotIn("死资产", r.stderr)
+        self.assertEqual(r.returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -52,6 +52,10 @@ def main() -> None:
         rel = p.relative_to(src)
         if rel.name in ("SKILL.md", "__init__.py"):
             continue
+        # 根 README.md 是仓库门面（消费方是人/GitHub，库内零引用是设计），豁免；
+        # 子目录 README 不豁免——它们是技能内容，零引用即孤儿
+        if len(rel.parts) == 1 and rel.name == "README.md":
+            continue
         # 模块引用形式：scripts/ 子树内的 .py 按点路径（scripts.x、scripts.tests.x）
         stem_ref = None
         if rel.parts[0] == "scripts" and rel.suffix == ".py":
@@ -77,12 +81,14 @@ def main() -> None:
     if ghosts:
         reds.append("幽灵路径: " + "; ".join(ghosts))
 
-    # 3) 副本同步（白名单模式：只比技能应有文件，__pycache__/.DS_Store 等环境噪音天然免疫）
+    # 3) 副本同步（白名单模式：只比技能应有文件，__pycache__/.DS_Store 等环境噪音天然免疫；
+    #    .git 与根 README.md 只在源库是设计——README 是门面不进副本，两侧都不比）
     if deploy.exists():
-        expected = sorted(
-            p.relative_to(src) for p in src.rglob("*")
-            if p.is_file() and "__pycache__" not in p.parts and p.name != ".DS_Store"
-        )
+        def _sync_file(p: Path) -> bool:
+            return p.is_file() and "__pycache__" not in p.parts and p.name != ".DS_Store" \
+                and ".git" not in p.parts and p.name != "README.md"
+
+        expected = sorted(p.relative_to(src) for p in src.rglob("*") if _sync_file(p))
         mismatch = []
         for rel in expected:
             if not (deploy / rel).is_file():
@@ -91,8 +97,7 @@ def main() -> None:
                 mismatch.append(f"内容不同: {rel}")
         extra = sorted(
             p.relative_to(deploy) for p in deploy.rglob("*")
-            if p.is_file() and "__pycache__" not in p.parts and p.name != ".DS_Store"
-            and (src / p.relative_to(deploy)).exists() is False
+            if _sync_file(p) and (src / p.relative_to(deploy)).exists() is False
         )
         mismatch += [f"仅部署副本有: {rel}" for rel in extra]
         if mismatch:

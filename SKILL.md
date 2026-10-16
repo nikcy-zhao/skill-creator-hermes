@@ -147,8 +147,8 @@ metadata:
 
 - 时机：任务交付时过一遍本节——4↔5 循环收敛后才算交付。
 - 每轮 4↔5 迭代结束：全量轮 `benchmark.json`/`benchmark.md` 已生成、查看器已开、用户反馈已读回；冒烟轮按分层升级完成方向判定即算完成。「4. 改进技能」改动后未按 Step 3 分流返回对应循环=轮次未完成，静态检查通过不算交付。
-- 改动 scripts/ 后：Quick Reference 回归测试命令通过。
+- 改动 scripts/ 后跑回归测试；改动 references/ 正文后，新写入节句与存量同权过四问，全库引用图核节级消费（零指针节删）。
 - description 优化后：frontmatter 已更新为新 description，且向用户展示了前后对比和分数。
-- 精简/重构后：功能清单逐条核销无遗漏，自跑一遍新写的 Verification 节确认照原样能执行。
+- 精简/重构后：功能清单逐条核销，自跑新 Verification 节确认能执行。
 - **零残留三查与逻辑一致性自检（细则见 `references/改进原则.md`「交付门槛」）**：文件全消费、路径全对齐、副本全同步跑 `python3 -m scripts.precheck_deliver <技能源库路径>`（红即未过）；「同一事实一个说法」为语义判断，通读自检。
 - 交付前：被改技能自身 `quick_validate --strict` 通过。

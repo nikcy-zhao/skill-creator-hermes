@@ -41,12 +41,22 @@ def main() -> None:
     # 1) 死资产扫描
     texts: dict[Path, str] = {}
     for p in sorted(src.rglob("*")):
-        if p.is_file() and p.suffix in (".md", ".py", ".html", ".txt", ".json", ".yaml", ".yml"):
+        if p.is_file() and p.suffix in (".md", ".py", ".html", ".txt", ".json", ".yaml", ".yml", ".sh"):
             try:
                 texts[p] = p.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 pass
     all_text = "\n".join(texts.values())
+    # 目录级消费：全库文本中出现过的仓库内目录路径（尾斜杠收尾，如
+    # `cp -R ${HERMES_SKILL_DIR}/assets/presets/title-styles/` 整目录拷贝）——
+    # 其子树文件视为有消费方。三条收紧：URL 先剥除（防 https://…/assets/x/
+    # 误豁免本地同名目录；不能用 lookbehind 排 /，那会杀掉 ${VAR}/assets/ 真引用）；
+    # 贪婪量词捕获完整目录（惰性会截断成二级前缀、整父子树被 blanket 豁免）；
+    # 豁免证据与文件名判定同口径排除候选自身文本（防孤儿自述所在目录自我豁免）
+    _URL = re.compile(r"[\w\-./:%?&=#]+://[\w\-./:%?&=#]+")
+    _DIR_REF = re.compile(r"(?<![\w\-:])((?:references|scripts|templates|assets)/[\w\-./]+/)")
+    refs_by_file = {p: {m.group(1).rstrip("/") for m in _DIR_REF.finditer(_URL.sub(" ", t))}
+                    for p, t in texts.items()}
     orphans = []
     for p in texts:
         rel = p.relative_to(src)
@@ -56,13 +66,18 @@ def main() -> None:
         # 子目录 README 不豁免——它们是技能内容，零引用即孤儿
         if len(rel.parts) == 1 and rel.name == "README.md":
             continue
+        # tests/ 子树：回归测试的消费方是测试命令（python3 tests/test_x.py），不在库内文本
+        if rel.parts[0] == "tests":
+            continue
         # 模块引用形式：scripts/ 子树内的 .py 按点路径（scripts.x、scripts.tests.x）
         stem_ref = None
         if rel.parts[0] == "scripts" and rel.suffix == ".py":
             stem_ref = ".".join(rel.with_suffix("").parts)
-        # 文件名在全库他处出现，或以模块路径形式被调用/import → 有消费方
+        # 文件名在全库他处出现，或以模块路径形式被调用/import → 有消费方；
+        # 或目录级消费：父链出现在他文件的目录引用里
         others = [t for p2, t in texts.items() if p2 != p and (rel.name in t or (stem_ref and stem_ref in t))]
-        if not others:
+        prefixes = {"/".join(rel.parts[:i + 1]) for i in range(1, len(rel.parts))}
+        if not (others or any(prefixes & refs_by_file[p2] for p2 in refs_by_file if p2 != p)):
             orphans.append(str(rel))
     if orphans:
         reds.append("死资产（零引用孤儿文件）: " + ", ".join(orphans))

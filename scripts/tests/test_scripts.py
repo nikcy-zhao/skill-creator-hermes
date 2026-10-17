@@ -518,5 +518,96 @@ class TestPrecheckRepoMeta(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
 
 
+class TestPrecheckDeadAsset(unittest.TestCase):
+    """死资产扫描的合法消费形态：.sh 脚本间调用链、目录级消费、tests/ 子树；
+    真孤儿（零引用、无目录级消费、不在 tests/）仍须报。"""
+
+    def _run(self, skill):
+        import subprocess
+        return subprocess.run([sys.executable, "-m", "scripts.precheck_deliver", str(skill)],
+                              capture_output=True, text=True, cwd=REPO_ROOT, timeout=60)
+
+    def _mk_skill(self, td):
+        skill = td / "demo-da"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: demo-da\ndescription: d\n---\n\n# demo-da\n\n## When to Use\n\nx\n\n"
+            "## Procedure\n\n运行 `bash scripts/run.sh`；出厂物料整目录拷贝：\n\n```bash\n"
+            "cp -R ${HERMES_SKILL_DIR}/assets/presets/title-styles/ .gzh-article/presets/title-styles/\n"
+            "```\n\n## Pitfalls\n\ny\n\n## Verification\n\nz\n",
+            encoding="utf-8")
+        sc = skill / "scripts"
+        sc.mkdir()
+        (sc / "run.sh").write_text('HS="$_here/helper.py"\npython3 "$HS"\n', encoding="utf-8")
+        return skill
+
+    def test_sh_callchain_not_dead(self):
+        # .py 仅被 .sh 以 "$_here/helper.py" 调用 → 有消费方，不算孤儿
+        skill = self._mk_skill(_tempdir(self))
+        (skill / "scripts" / "helper.py").write_text("print('ok')\n", encoding="utf-8")
+        r = self._run(skill)
+        self.assertNotIn("死资产", r.stderr)
+
+    def test_dir_level_consume_not_dead(self):
+        # 目录被整目录 cp 引用 → 目录下文件豁免
+        skill = self._mk_skill(_tempdir(self))
+        d = skill / "assets" / "presets" / "title-styles"
+        d.mkdir(parents=True)
+        (d / "利益承诺型.md").write_text("预设", encoding="utf-8")
+        r = self._run(skill)
+        self.assertNotIn("死资产", r.stderr)
+
+    def test_tests_subtree_not_dead(self):
+        # tests/ 回归测试的消费方是测试命令，不在库内文本
+        skill = self._mk_skill(_tempdir(self))
+        (skill / "tests").mkdir()
+        (skill / "tests" / "test_x.py").write_text("assert True\n", encoding="utf-8")
+        r = self._run(skill)
+        self.assertNotIn("死资产", r.stderr)
+
+    def test_true_orphan_still_dead(self):
+        # 防退化：真孤儿仍报
+        skill = self._mk_skill(_tempdir(self))
+        (skill / "references").mkdir()
+        (skill / "references" / "孤儿.md").write_text("没人引用我", encoding="utf-8")
+        r = self._run(skill)
+        self.assertIn("死资产", r.stderr)
+
+    def test_dir_ref_not_truncated(self):
+        # 防退化：目录引用捕获完整路径——引用 assets/presets/title-styles/
+        # 不得把兄弟目录 assets/presets/other/ 一并豁免（惰性量词截断会）
+        skill = self._mk_skill(_tempdir(self))
+        d = skill / "assets" / "presets" / "other"
+        d.mkdir(parents=True)
+        (d / "sibling-dead.md").write_text("兄弟目录孤儿", encoding="utf-8")
+        r = self._run(skill)
+        self.assertIn("死资产", r.stderr)
+        self.assertIn("other/sibling-dead.md", r.stderr)
+
+    def test_url_dir_ref_ignored(self):
+        # 防退化：URL 内的目录路径不得豁免本地同名目录
+        skill = self._mk_skill(_tempdir(self))
+        (skill / "SKILL.md").write_text(
+            (skill / "SKILL.md").read_text(encoding="utf-8")
+            + "\n参考 https://github.com/x/y/tree/main/assets/urls/ 文档\n",
+            encoding="utf-8")
+        d = skill / "assets" / "urls"
+        d.mkdir(parents=True)
+        (d / "url-dead.md").write_text("URL 同名孤儿", encoding="utf-8")
+        r = self._run(skill)
+        self.assertIn("死资产", r.stderr)
+        self.assertIn("urls/url-dead.md", r.stderr)
+
+    def test_self_reference_not_exempt(self):
+        # 防退化：孤儿自述所在目录不得自我豁免（豁免证据须来自他文件）
+        skill = self._mk_skill(_tempdir(self))
+        d = skill / "assets" / "selfref"
+        d.mkdir(parents=True)
+        (d / "self-dead.md").write_text("see assets/selfref/ for details", encoding="utf-8")
+        r = self._run(skill)
+        self.assertIn("死资产", r.stderr)
+        self.assertIn("selfref/self-dead.md", r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

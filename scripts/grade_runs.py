@@ -31,11 +31,13 @@ def run_check(check_py: Path, outputs: Path, timeout: int = 60) -> tuple[str, di
     try:
         r = subprocess.run(
             [sys.executable, str(check_py), str(outputs)],
-            capture_output=True, text=True, timeout=timeout)
+            capture_output=True, text=True, timeout=timeout, cwd=_REPO_ROOT)
     except subprocess.TimeoutExpired:
         return "timeout", None, f"check.py 超时（>{timeout}s）被终止"
     try:
         data = json.loads(r.stdout)
+        if not isinstance(data, dict):
+            raise ValueError("output is not a JSON object")
         if "expectations" not in data:
             raise ValueError("missing 'expectations'")
     except (json.JSONDecodeError, ValueError) as e:
@@ -62,8 +64,8 @@ def main() -> None:
                 outputs = run_dir / "outputs"
                 grading = run_dir / "grading.json"
                 if not outputs.is_dir():
-                    # 无 outputs 的 run 记入模型判待跑（见下方第二遍循环），不在此报错——
-                    # 用例没跑完是常态，静默跳过并在汇总里留缺口提示
+                    # 无 outputs 的 run：本遍不评分；第二遍循环对"无 check.py"报
+                    # model_pending、对"有 check.py"报执行缺口，不在本遍静默漏计
                     continue
                 if args.dry_run:
                     scripted.append(f"{run_dir} (dry)")
@@ -74,15 +76,17 @@ def main() -> None:
                     continue
                 grading.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                 scripted.append(str(run_dir))
-        # 无 outputs 的 run 落入下方第二遍循环的 model_pending 缺口提示
-    # 无 check.py 的 run 分两报：已有 grading.json＝模型判已完成；没有＝模型判待跑（真缺口）
+    # 无 check.py 的 run 分两报：已有 grading.json＝模型判已完成；没有＝模型判待跑（真缺口）；
+    # 有 check.py 却无 outputs/grading 的 run 是执行缺口，单独报——旧逻辑整 eval 跳过会静默漏计
     for eval_dir in sorted(it.glob("eval-*")):
+        has_check = (eval_dir / "check.py").exists()
         for cfg_dir in sorted(p for p in eval_dir.iterdir() if p.is_dir()):
             for run_dir in sorted(cfg_dir.glob("run-*")):
                 g = run_dir / "grading.json"
-                if (eval_dir / "check.py").exists():
-                    continue
-                if g.exists():
+                if has_check:
+                    if not (run_dir / "outputs").is_dir() and not g.exists():
+                        failed.append(f"{run_dir}: eval 有 check.py 但 run 无 outputs（未执行）")
+                elif g.exists():
                     model_only.append(str(run_dir))
                 else:
                     model_pending.append(str(run_dir))

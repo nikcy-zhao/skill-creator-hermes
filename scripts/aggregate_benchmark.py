@@ -40,6 +40,7 @@ import json
 import math
 import re
 import shutil
+import os
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -47,6 +48,13 @@ from pathlib import Path
 
 from scripts.utils import estimate_tokens
 
+
+
+def _default_state_db() -> Path:
+    """state.db 默认位置：跟 HERMES_HOME 走（profile 会话的库在 profile 目录），
+    未设置时回落 default 主库。写死 ~/.hermes 会让 profile 内跑的评测归因落空。"""
+    home = os.environ.get("HERMES_HOME")
+    return Path(home) / "state.db" if home else Path.home() / ".hermes" / "state.db"
 
 def compute_skill_size(skill_path: str) -> dict | None:
     """测 SKILL.md 字符数/行数＋token估算；路径缺失返回 None。"""
@@ -139,7 +147,7 @@ def _tokens_from_delegations(run_dir: Path, workspace: Path, db_path: Path | Non
     归因到单个子代理，不会混入评分批/主会话/无关任务。
     匹配不到返回 None（回退链继续走下一级）。
     """
-    db = db_path or (Path.home() / ".hermes" / "state.db")
+    db = db_path or _default_state_db()
     if not db.exists():
         return None
     # run 相对路径锚点：iteration-N/eval-x/with_skill/run-1（含 outputs/ 防误配
@@ -265,11 +273,14 @@ def _reuse_baselines(cur_dir: Path, prev_dir: Path) -> None:
                 errors.append(f"{eval_dir.name}/without_skill/{run_dir.name}: 上轮无对应 run（{src_run}）")
                 continue
             missing = [f for f in ("grading.json", "timing.json") if not (src_run / f).exists()]
+            # usage.json 为可选真值来源：上轮有则一并带过来，回退链第二级才不空转
             if missing:
                 errors.append(f"{eval_dir.name}/without_skill/{run_dir.name}: 上轮缺 {'、'.join(missing)}")
                 continue
             for fname in ("grading.json", "timing.json"):
                 shutil.copy2(src_run / fname, run_dir / fname)
+            if (src_run / "usage.json").exists():
+                shutil.copy2(src_run / "usage.json", run_dir / "usage.json")
             copied += 1
     if errors:
         print("ERROR: --reuse-baseline 无法完成基线复用：", file=sys.stderr)
@@ -292,7 +303,7 @@ def _tokens_from_session_usage(run_dir: Path, db_path: Path | None = None):
     取小防止把无关会话的消耗记进来）。
     匹配不到返回 None（回退链继续走下一级）。
     """
-    db = db_path or (Path.home() / ".hermes" / "state.db")
+    db = db_path or _default_state_db()
     if not db.exists():
         return None
     outputs = run_dir / "outputs"
@@ -306,19 +317,26 @@ def _tokens_from_session_usage(run_dir: Path, db_path: Path | None = None):
         # tool_calls JSON 里中文路径以 \uXXXX 转义存储，明文 LIKE 不中——
         # 锚点同时生成明文与 json.dumps 转义两种形态（含 outputs/ 防误配
         # grading 路径；转义形态的反斜杠经 _escape_like 处理）
-        anchor_plain = f"{outputs.as_posix()}"
-        anchor_esc = json.dumps(anchor_plain)[1:-1]
-        queries = [anchor_plain, anchor_esc]
-        for anchor in _writer_anchors(outputs)[1:]:
+        # 全部形态（resolve/absolute/原样）都生成明文+转义两种查询——
+        # [1:] 切 resolve 形态会让 symlink/别名路径下的会话永远查不到
+        queries = []
+        for anchor in _writer_anchors(outputs):
             queries.append(anchor)
             queries.append(json.dumps(anchor)[1:-1])
+        # 写入证据双通道（实测 2026-10-18 落库形态：assistant 行 tool_calls 常为空，
+        # 参数与回执落在 role='tool' 行）：
+        # ① tool 回执行——tool_name 限定写类四通道（write_file/patch/execute_code/terminal），
+        #    read 类回执虽含路径但不是写入，天然排除；user 提示词行（派单文本含路径）也被 role 限定排除
+        # ② assistant 行 tool_calls 含写类调用且参数含锚点（兼容参数落在 tool_calls 的版本）
         rows = []
         for q in queries:
             rows = con.execute(
                 "SELECT DISTINCT session_id FROM messages "
-                "WHERE role='assistant' AND tool_calls LIKE '%write%' "
-                "AND tool_calls LIKE ? ESCAPE '\\'",
-                ("%" + _escape_like(q) + "%",)).fetchall()
+                "WHERE ((role='tool' AND tool_name IN ('write_file','patch','execute_code','terminal') "
+                "        AND content LIKE ? ESCAPE '\\') "
+                "       OR (role='assistant' AND tool_calls LIKE '%write%' "
+                "           AND tool_calls LIKE ? ESCAPE '\\'))",
+                ("%" + _escape_like(q) + "%", "%" + _escape_like(q) + "%")).fetchall()
             if rows:
                 break
         if not rows:
@@ -377,20 +395,52 @@ def _skill_view_hit(con, session_id: str, skill_name: str) -> bool:
         "AND tool_calls LIKE '%skill_view%'",
         (session_id,)).fetchall()
     for (tc,) in rows:
-        compact = (tc or "").replace(" ", "").replace("\\", "")
-        if f'"name":"{skill_name}"' in compact:
+        if _text_names_skill(tc, skill_name):
             return True
     rows = con.execute(
         "SELECT content FROM messages WHERE session_id=? AND tool_name='skill_view'",
         (session_id,)).fetchall()
     for (c,) in rows:
-        compact = (c or "").replace(" ", "").replace("\\", "")
-        if f'"name":"{skill_name}"' in compact:
+        if _text_names_skill(c, skill_name):
             return True
     return False
 
 
-def _verify_runs(benchmark_dir: Path, skill_name: str) -> None:
+def _text_names_skill(text, skill_name):
+    """判定 state.db 文本是否点名了该技能（name 键值为完整技能名）。
+    state.db 里中文/非 ASCII 以 \\uXXXX 转义存储，剥反斜杠的旧法对非 ASCII 名
+    永远匹配不上——先 json.loads 解码，再递归遍历结构逐层比对 name 值
+    （arguments 常是字符串形态的嵌套 JSON，解码后按同规则下探）；
+    整段非 JSON 时退回对原文的精确正则。"""
+    if not text:
+        return False
+
+    def _walk(node):
+        if isinstance(node, dict):
+            if node.get("name") == skill_name:
+                return True
+            return any(_walk(v) for v in node.values())
+        if isinstance(node, list):
+            return any(_walk(v) for v in node)
+        if isinstance(node, str):
+            s = node.strip()
+            if s.startswith(("{", "[")):
+                try:
+                    return _walk(json.loads(s))
+                except (json.JSONDecodeError, ValueError):
+                    pass
+        return False
+
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        data = None
+    if data is not None:
+        return _walk(data)
+    return re.search(r'"name"\s*:\s*"%s"' % re.escape(skill_name), text) is not None
+
+
+def _verify_runs(benchmark_dir: Path, skill_name: str, db_path: Path | None = None) -> None:
     """汇总前核对（原手工两件事的代码化）：
 
     1. 产物作者会话归属：state.db 查写入各 run outputs 路径的会话，须存在——
@@ -400,14 +450,20 @@ def _verify_runs(benchmark_dir: Path, skill_name: str) -> None:
     违规打印明细并 sys.exit(4)；skill_name 为空时跳过第 2 项。
     """
     import sqlite3
-    db_path = Path.home() / ".hermes" / "state.db"
+    db_path = db_path or _default_state_db()
     if not db_path.exists():
-        print("ERROR: --verify needs ~/.hermes/state.db (not found)", file=sys.stderr)
+        print(f"ERROR: --verify needs {db_path} (not found)", file=sys.stderr)
         sys.exit(4)
-    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)  # 只读，不锁活库
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)  # 只读，不锁活库
+    except sqlite3.Error as e:
+        print(f"ERROR: --verify cannot open state.db: {e}", file=sys.stderr)
+        sys.exit(4)
     violations: list[str] = []
     sessions_by_run: dict[str, set] = {}
-    for eval_dir in sorted(benchmark_dir.glob("eval-*")):
+    # 与 load_run_results 同布局探测：eval 目录可直接在 benchmark_dir 下，或在 runs/ 下
+    _search_dir = benchmark_dir / "runs" if (benchmark_dir / "runs").exists() else benchmark_dir
+    for eval_dir in sorted(_search_dir.glob("eval-*")):
         for cfg_dir in sorted(p for p in eval_dir.iterdir() if p.is_dir() and list(p.glob("run-*"))):
             for run_dir in sorted(cfg_dir.glob("run-*"), key=_natural_sort_key):
                 outputs = run_dir / "outputs"
@@ -415,9 +471,18 @@ def _verify_runs(benchmark_dir: Path, skill_name: str) -> None:
                     continue
                 writer_sessions: set = set()
                 for anchor in _writer_anchors(outputs):
+                    # 写入证据双通道（实测 2026-10-18 落库形态：assistant 行 tool_calls 常为空，
+        # 参数与回执落在 role='tool' 行）：
+        # ① tool 回执行——tool_name 限定写类四通道（write_file/patch/execute_code/terminal），
+        #    read 类回执虽含路径但不是写入，天然排除；user 提示词行（派单文本含路径）也被 role 限定排除
+        # ② assistant 行 tool_calls 含写类调用且参数含锚点（兼容参数落在 tool_calls 的版本）
                     rows = con.execute(
-                        "SELECT DISTINCT session_id FROM messages WHERE content LIKE ? ESCAPE '\\' LIMIT 50",
-                        ("%" + _escape_like(anchor) + "%",)).fetchall()
+                        "SELECT DISTINCT session_id FROM messages "
+                        "WHERE ((role='tool' AND tool_name IN ('write_file','patch','execute_code','terminal') "
+                        "        AND content LIKE ? ESCAPE '\\') "
+                        "       OR (role='assistant' AND tool_calls LIKE '%write%' "
+                        "           AND tool_calls LIKE ? ESCAPE '\\')) LIMIT 50",
+                        ("%" + _escape_like(anchor) + "%", "%" + _escape_like(anchor) + "%")).fetchall()
                     writer_sessions |= {r[0] for r in rows}
                 sessions_by_run[str(run_dir)] = writer_sessions
                 if not writer_sessions:
@@ -431,6 +496,19 @@ def _verify_runs(benchmark_dir: Path, skill_name: str) -> None:
                 violations.append(
                     f"{run_dir}: with_skill 组未见对被测技能 {skill_name!r} 的 skill_view 调用"
                     "（技能未真用，该轮无效）")
+    # 基线组反向验证：查"对被测技能"的 skill_view——协议边界是"基线不装载被测技能"，
+    # 基线自主查看其他技能属裸模型通用能力、不算污染；查"任何 skill_view"会把合法
+    # 基线误杀（评测非技能类 skill 时必踩），且字样匹配连自研代码里的 skill_view
+    # 一词都会误报——判定一律走 _skill_view_hit（点名被测技能名的真调用）
+    if skill_name:
+        for run_dir, sessions in sessions_by_run.items():
+            if "without_skill" not in run_dir:
+                continue
+            polluted = [sid for sid in sessions if _skill_view_hit(con, sid, skill_name)]
+            if polluted:
+                violations.append(
+                    f"{run_dir}: without_skill 组会话 {', '.join(polluted[:3])} 存在对被测技能"
+                    f" {skill_name!r} 的 skill_view 调用（基线被污染，该轮无效）")
     con.close()
     if violations:
         print("ERROR: pre-aggregation verification failed:", file=sys.stderr)
@@ -440,7 +518,7 @@ def _verify_runs(benchmark_dir: Path, skill_name: str) -> None:
         sys.exit(4)
 
 
-def load_run_results(benchmark_dir: Path) -> dict:
+def load_run_results(benchmark_dir: Path, db_path: Path | None = None) -> dict:
     """
     Load all run results from a benchmark directory.
 
@@ -539,7 +617,7 @@ def load_run_results(benchmark_dir: Path) -> dict:
                             secs = msecs / 1000.0
                         result["time_seconds"] = secs
 
-                # token回退链：timing.json > usage.json > outputs 文本估算
+                # token回退链（六级）：timing.json > usage.json > state.db-delegation > state.db-session > metrics.output_chars > outputs 文本估算
                 # （各级独立判定，不与计时条件耦合；来源记入 tokens_source 供 viewer 展示可信度）
                 result["tokens"] = 0
                 result["tokens_source"] = "none"
@@ -563,7 +641,7 @@ def load_run_results(benchmark_dir: Path) -> dict:
                 # state.db 委派血缘回填：delegate_task 场景的真值（input+output，
                 # 口径不含 cache_read——result_json 的 input 已摊入；详见函数 docstring）
                 if not result["tokens"]:
-                    deleg = _tokens_from_delegations(run_dir, benchmark_dir)
+                    deleg = _tokens_from_delegations(run_dir, benchmark_dir, db_path=db_path)
                     if deleg:
                         result["tokens"] = deleg["total_tokens"]
                         result["tokens_source"] = deleg["source"]
@@ -574,7 +652,7 @@ def load_run_results(benchmark_dir: Path) -> dict:
                 # state.db 按写入会话归因：不依赖提示词措辞的兜底真值——
                 # goal 锚点失配（路径写在 context、措辞缺写入动词等）时在此兜住
                 if not result["tokens"]:
-                    sess = _tokens_from_session_usage(run_dir)
+                    sess = _tokens_from_session_usage(run_dir, db_path=db_path)
                     if sess:
                         result["tokens"] = sess["total_tokens"]
                         result["tokens_source"] = sess["source"]
@@ -622,7 +700,7 @@ def load_run_results(benchmark_dir: Path) -> dict:
                 raw_expectations = grading.get("expectations") or []
                 raw_expectations = [e for e in raw_expectations if isinstance(e, dict)]
                 for exp in raw_expectations:
-                    if "text" not in exp or "passed" not in exp:
+                    if "text" not in exp or "passed" not in exp or "evidence" not in exp:
                         print(f"Warning: expectation in {grading_file} missing required fields (text, passed, evidence): {exp}")
                 result["expectations"] = raw_expectations
 
@@ -670,8 +748,11 @@ def aggregate_results(results: dict) -> dict:
             "tokens": calculate_stats(tokens)
         }
 
-    # Calculate delta between the first two configs (if two exist)
-    if len(configs) >= 2:
+    # Delta 显式锚定两配置：字典序碰巧 with<without 才对，混入杂目录会静默改口径
+    if "with_skill" in run_summary and "without_skill" in run_summary:
+        primary = run_summary["with_skill"]
+        baseline = run_summary["without_skill"]
+    elif len(configs) >= 2:
         primary = run_summary.get(configs[0], {})
         baseline = run_summary.get(configs[1], {})
     else:
@@ -692,11 +773,12 @@ def aggregate_results(results: dict) -> dict:
 
 
 def generate_benchmark(benchmark_dir: Path, skill_name: str = "", skill_path: str = "",
-                       executor_model: str = "", analyzer_model: str = "") -> dict:
+                       executor_model: str = "", analyzer_model: str = "",
+                       db_path: Path | None = None) -> dict:
     """
     Generate complete benchmark.json from run results.
     """
-    results = load_run_results(benchmark_dir)
+    results = load_run_results(benchmark_dir, db_path=db_path)
     run_summary = aggregate_results(results)
 
     # Build runs array for benchmark.json
@@ -716,6 +798,7 @@ def generate_benchmark(benchmark_dir: Path, skill_name: str = "", skill_path: st
                     "time_seconds": result["time_seconds"],
                     "tokens": result.get("tokens", 0),
                     "tokens_source": result.get("tokens_source", "none"),
+                    "api_calls": result.get("api_calls"),
                     "tool_calls": result.get("tool_calls", 0),
                     "errors": result.get("errors", 0)
                 },
@@ -868,6 +951,13 @@ def main():
         help="Analyzer model ID written into metadata.analyzer_model (default: same as --executor-model)"
     )
     parser.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="Path to state.db for delegation/session token attribution and --verify "
+             "(default: HERMES_HOME/state.db, falling back to ~/.hermes/state.db)"
+    )
+    parser.add_argument(
         "--verify",
         action="store_true",
         help="Pre-aggregation verification: check run authorship (session provenance from "
@@ -887,11 +977,12 @@ def main():
 
     # 汇总前核对：产物归属 + 技能真用（原手工两件事）
     if args.verify:
-        _verify_runs(args.benchmark_dir, args.skill_name)
+        _verify_runs(args.benchmark_dir, args.skill_name, db_path=args.db)
 
     # Generate benchmark
     benchmark = generate_benchmark(args.benchmark_dir, args.skill_name, args.skill_path,
-                                   executor_model=args.executor_model, analyzer_model=args.analyzer_model)
+                                   executor_model=args.executor_model, analyzer_model=args.analyzer_model,
+                                   db_path=args.db)
 
     # 估算级闸门：任一 run 的token数非真值来源即拒绝出报告（防数量级失真的假数字进报告）
     # 真值来源：timing.json / usage.json / state.db-delegation / state.db-session；非真值即闸门拦下

@@ -40,13 +40,17 @@ def main() -> None:
 
     # 1) 死资产扫描
     texts: dict[Path, str] = {}
+    all_files: list[Path] = []
     for p in sorted(src.rglob("*")):
-        if p.is_file() and p.suffix in (".md", ".py", ".html", ".txt", ".json", ".yaml", ".yml", ".sh"):
-            try:
-                texts[p] = p.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                pass
-    all_text = "\n".join(texts.values())
+        # .git 子树是仓库元数据不是技能内容，孤儿判定与文本池都不收
+        if p.is_file() and "__pycache__" not in p.parts and ".git" not in p.parts \
+                and p.name not in (".DS_Store", ".gitignore"):
+            all_files.append(p)
+            if p.suffix in (".md", ".py", ".html", ".txt", ".json", ".yaml", ".yml", ".sh"):
+                try:
+                    texts[p] = p.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    pass
     # 目录级消费：全库文本中出现过的仓库内目录路径（尾斜杠收尾，如
     # `cp -R ${HERMES_SKILL_DIR}/assets/presets/title-styles/` 整目录拷贝）——
     # 其子树文件视为有消费方。三条收紧：URL 先剥除（防 https://…/assets/x/
@@ -58,7 +62,7 @@ def main() -> None:
     refs_by_file = {p: {m.group(1).rstrip("/") for m in _DIR_REF.finditer(_URL.sub(" ", t))}
                     for p, t in texts.items()}
     orphans = []
-    for p in texts:
+    for p in all_files:
         rel = p.relative_to(src)
         if rel.name in ("SKILL.md", "__init__.py"):
             continue
@@ -99,11 +103,13 @@ def main() -> None:
     # 3) 副本同步（白名单模式：只比技能应有文件，__pycache__/.DS_Store 等环境噪音天然免疫；
     #    .git 与根 README.md 只在源库是设计——README 是门面不进副本，两侧都不比）
     if deploy.exists():
-        def _sync_file(p: Path) -> bool:
+        def _sync_file(p: Path, root: Path) -> bool:
+            # 仅根 README 豁免（门面不进副本）；子目录 README 是技能内容，两侧都要比
             return p.is_file() and "__pycache__" not in p.parts and p.name != ".DS_Store" \
-                and ".git" not in p.parts and p.name != "README.md"
+                and ".git" not in p.parts and not (
+                    p.name == "README.md" and p.parent == root)
 
-        expected = sorted(p.relative_to(src) for p in src.rglob("*") if _sync_file(p))
+        expected = sorted(p.relative_to(src) for p in src.rglob("*") if _sync_file(p, src))
         mismatch = []
         for rel in expected:
             if not (deploy / rel).is_file():
@@ -112,7 +118,7 @@ def main() -> None:
                 mismatch.append(f"内容不同: {rel}")
         extra = sorted(
             p.relative_to(deploy) for p in deploy.rglob("*")
-            if _sync_file(p) and (src / p.relative_to(deploy)).exists() is False
+            if _sync_file(p, deploy) and (src / p.relative_to(deploy)).exists() is False
         )
         mismatch += [f"仅部署副本有: {rel}" for rel in extra]
         if mismatch:

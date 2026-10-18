@@ -181,8 +181,15 @@ def validate_strict(skill_path) -> tuple[bool, str]:
         if seen_h1 and l.startswith("## ") and i > 0 and lines[i - 1].strip() != '':
             problems.append(f"第 {i+1} 行 '{l}' 前缺空行")
 
-    # 3) 七节结构：必选节存在
-    headings = {l[3:].strip() for l in lines if l.startswith('## ')}
+    # 3) 七节结构：必选节存在（跳过围栏内——代码块示例里的 '## xxx' 不是真实节，与上面两查同口径）
+    headings: set[str] = set()
+    fence3 = False
+    for l in lines:
+        if l.lstrip().startswith("```"):
+            fence3 = not fence3
+            continue
+        if not fence3 and l.startswith("## "):
+            headings.add(l[3:].strip())
     for req in ("When to Use", "Procedure", "Pitfalls", "Verification"):
         if req not in headings:
             problems.append(f"缺少必选节 '## {req}'")

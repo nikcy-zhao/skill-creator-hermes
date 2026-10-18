@@ -48,8 +48,8 @@ skill-creator-hermes/
 ├── SKILL.md              # 技能本体：七节流程（入口分流/检验/改进/评测/优化/盲比较）
 ├── references/           # 判定器与协议：frontmatter 规范、写作规范、废话/重复形态清单、评测协议、JSON schema
 ├── templates/            # 子代理提示词：评分（grader）、盲比较（comparator）、事后分析（analyzer）
-├── scripts/              # 12 个工具脚本：校验、预检、评分、汇总、触发评测/优化、查看器、报告
-│   └── tests/            # 26 项回归测试
+├── scripts/              # 工具脚本：校验、预检、评分、汇总、触发评测/优化、查看器、报告
+│   └── tests/            # 回归测试
 └── assets/               # 基准查看器 HTML（体检摘要卡 / 逐判据矩阵 / 输出审查页）
 ```
 

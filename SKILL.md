@@ -31,15 +31,15 @@ metadata:
 | 用途 | 命令 |
 |---|---|
 | 回归测试 | `python3 -m unittest scripts.tests.test_scripts`（scripts/ 回归） |
-| 技能组单跑 | `terminal(command="hermes -z \"<提示词>\" --skills <技能名> --usage-file <运行目录>/usage.json 2>&1 \| tee <运行目录>/stdout.log", background=true)`；基线＝同命令去 `--skills <技能名>` |
+| 技能组单跑 | `terminal(command="hermes -z \"<提示词>\" --skills <技能名> --usage-file <运行目录>/usage.json 2>&1 \| tee <运行目录>/stdout.log", background=true)`；基线＝去掉 `--skills` |
 | 单技能校验 | `python3 -m scripts.quick_validate <技能路径>`（交付预检用 `--strict`，多查 H1/空行/必选节/体积/license） |
 | 交付预检 | `python3 -m scripts.precheck_deliver <技能源库路径>`（死资产/幽灵路径/副本同步/strict 四查＋`--snapshot-to <工作区>` 留旧版快照） |
-| 基准汇总 | `python3 -m scripts.aggregate_benchmark <workspace>/iteration-N --skill-name <name> --skill-path <技能路径> --executor-model <模型ID> --verify`（`--verify` 查产物归属＋技能真用；基线沿用上一次迭代加 `--reuse-baseline <上一次迭代目录>`；模型 ID 字段说明见 `references/schemas.md`） |
+| 基准汇总 | `python3 -m scripts.aggregate_benchmark <workspace>/iteration-N --skill-name <name> --skill-path <技能路径> --executor-model <模型ID> --verify`（`--verify` 查产物归属＋真用；其余 flag 见 `references/schemas.md`） |
 | 批量脚本评分 | `python3 -m scripts.grade_runs <workspace>/iteration-N`（扫全部 run 跑 check.py 出 grading.json） |
 | 触发评测单跑 | `python3 -m scripts.run_eval --eval-set <eval-set.json> --skill-path <skill路径> --verbose` |
 | 触发优化循环 | `python3 -m scripts.run_loop --eval-set <trigger-eval.json> --skill-path <skill路径> --model <当前会话模型ID> --results-dir <workspace>` |
 | 审查页生成 | `python3 -m scripts.gen_review_page --queries <查询JSON> --skill-path <技能路径> --open` |
-| 结果查看器 | `terminal(command="python3 -m scripts.generate_review <workspace>/iteration-N --skill-name \"<name>\" --benchmark <workspace>/iteration-N/benchmark.json", background=true)`；静默重启（页面已开、改后让用户自行刷新）加 `--no-open`，防重复弹标签页 |
+| 结果查看器 | `terminal(command="python3 -m scripts.generate_review <workspace>/iteration-N --skill-name \"<name>\" --benchmark <workspace>/iteration-N/benchmark.json", background=true)`；页面已开的静默重启加 `--no-open`（改后用户自行刷新） |
 
 ### 被测对象铁律
 
@@ -92,7 +92,7 @@ metadata:
 
 ### 4. 改进技能
 
-**Step 1**: 按入口完成前置——检验报告入口（经步骤 3）全文已在上下文直接进 Step 2；用户点名（情境 6）与循环回流（3↔4 / 4↔5）入口重读 skill 全文（用户贴的片段≠盘上现状），4↔5 回流另读工作区根 `feedback.json`，再进 Step 2。改进现有技能且本轮首次动手前，先按 Quick Reference 交付预检命令留旧版快照（`--snapshot-to <工作区>`，供「7. 盲比较」；改后再 cp 拿到的是新版，快照不可事后补）
+**Step 1**: 按入口完成前置——检验报告入口（经步骤 3）全文已在上下文直接进 Step 2；用户点名（情境 6）与循环回流（3↔4 / 4↔5）入口重读 skill 全文（用户贴的片段≠盘上现状），4↔5 回流另读工作区根 `feedback.json`，再进 Step 2。改进现有技能且本轮首次动手前，先按 Quick Reference 交付预检命令留旧版快照（`--snapshot-to <工作区>`，供「7. 盲比较」；快照不可事后补）
 
 **Step 2**: 依次对检验报告/用户反馈中的问题，按照 `references/writing-rules.md`「写作规范」与 `references/改进原则.md` 逐条执行修改
 
@@ -111,7 +111,7 @@ metadata:
 
 **迭代期分层升级（定稿验证不适用，只用于 4↔5 循环方向判断）**：机制见 `references/eval-protocol.md`「分层升级」。
 
-**第 3 步：评分、汇总、开查看器。** 仅汇总显示 time_seconds 为 0 且非 delegate 时才手工补 timing.json。
+**第 3 步：评分、汇总、开查看器。** 仅汇总显示 time_seconds 为 0 且非 delegate 时才手工补 timing.json（耗时推算方法见 `references/schemas.md`「timing.json」）。
 1. 评分：Quick Reference 批量脚本评分命令跑 check.py 出 grading.json；无 check.py 的 run 由评分子代理补齐（读 `templates/grader.md`，注意事项见 `references/eval-protocol.md`「评分子代理」）。
 2. 汇总：Quick Reference 的基准汇总命令，产出 `benchmark.json`/`benchmark.md`。
 3. 分析：按 `templates/analyzer.md` 找模式；结论按用例分列组间差、汇报各配置 run 数的规则见 `references/eval-protocol.md`「结果分析」。

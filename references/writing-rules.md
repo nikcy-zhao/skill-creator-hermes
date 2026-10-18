@@ -3,7 +3,7 @@
 ## 正文结构（各节职责与归属）
 
 ```markdown
-# Skill-name            ← H1 标题；导语 1-2 句：做什么、不做什么、依赖什么
+# Skill-name            ← H1 标题；导语 1-2 句：做什么、不做什么、依赖什么；When to Use 与 Prerequisites 已覆盖时可省——总括复述属废话
 ## When to Use          ← 必选。触发条件 + 反向触发（不要用于…）
 ## Prerequisites        ← 可选。跑之前就要存在的：环境变量、安装项、依赖、MCP 服务等
 ## How to Run           ← 可选。脚本的通用调用约定（跨命令、命令表装不下时才写）

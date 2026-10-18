@@ -25,7 +25,7 @@ import sys
 import time
 import webbrowser
 from functools import partial
-from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 # Files to exclude from output listings
@@ -86,8 +86,12 @@ def find_runs(workspace: Path) -> list[dict]:
     # an eval_id sort last instead of raising TypeError. 注意判 None 而非 falsy：
     # 合法的 eval_id=0 不能被当成缺失。
     def _eid(r: dict) -> float:
+        # 手写的 eval_metadata.json 类型无强约束：非数值一律按缺失排最后
+        # （0 仍是合法数值不落入此分支——bool 除外，可忽略）
         v = r.get("eval_id")
-        return float("inf") if v is None else float(v)
+        if isinstance(v, (int, float)):
+            return float(v)
+        return float("inf")
 
     def _id_natural_key(s: str) -> list:
         # 字符串 id 内数字段按数值排（run-10 在 run-2 后），与 aggregate 的
@@ -161,12 +165,8 @@ def build_run(root: Path, run_dir: Path) -> dict | None:
             if f.is_file() and f.name not in METADATA_FILES:
                 output_files.append(embed_file(f))
 
-    # Load grading if present
-    grading = None
-    for candidate in [run_dir / "grading.json", run_dir.parent / "grading.json"]:
-        grading = _load_json_optional(candidate)
-        if grading:
-            break
+    # Load grading if present（grading 只在 run 目录内；父级候选永不命中，纯误导）
+    grading = _load_json_optional(run_dir / "grading.json")
 
     return {
         "id": run_id,
@@ -221,7 +221,8 @@ def load_previous_iteration(workspace: Path) -> dict[str, dict]:
         feedback_map = {
             r["run_id"]: r["feedback"]
             for r in data.get("reviews", [])
-            if r.get("feedback", "").strip()
+            if isinstance(r, dict) and isinstance(r.get("run_id"), str)
+            and isinstance(r.get("feedback"), str) and r["feedback"].strip()
         }
 
     # Load runs (to get outputs)
@@ -400,7 +401,11 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     raise
                 resp = b'{"ok":true}'
                 self.send_response(200)
-            except (json.JSONDecodeError, OSError, ValueError) as e:
+            except (json.JSONDecodeError, ValueError) as e:
+                # 客户端格式错（非 JSON / 缺 reviews 键）→ 400，不冒充服务器内部错误
+                resp = json.dumps({"error": str(e)}).encode()
+                self.send_response(400)
+            except OSError as e:
                 resp = json.dumps({"error": str(e)}).encode()
                 self.send_response(500)
             self.send_header("Content-Type", "application/json")
@@ -469,12 +474,20 @@ def main() -> None:
     port = args.port
     _kill_port(port)
     handler = partial(ReviewHandler, workspace, skill_name, feedback_path, previous, benchmark_path, trigger_path)
-    try:
-        server = ThreadingHTTPServer(("127.0.0.1", port), handler)
-    except OSError:
-        # Port still in use after kill attempt — find a free one
+    # 静默重启（--no-open）依赖原端口接住已开页面的心跳：kill 后线程退出
+    # 非瞬时，固定 0.5s 常不够——绑定失败就重试数秒，仍失败才退随机端口并明示
+    server = None
+    for _ in range(10):
+        try:
+            server = ThreadingHTTPServer(("127.0.0.1", port), handler)
+            break
+        except OSError:
+            time.sleep(0.5)
+    if server is None:
         server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         port = server.server_address[1]
+        print("Warning: original port never freed; viewer restarted on a random "
+              "port — the already-open page will go stale.", file=sys.stderr)
 
     url = f"http://localhost:{port}"
     print(f"\n  Eval Viewer")

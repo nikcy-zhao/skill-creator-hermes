@@ -84,9 +84,9 @@
 
 一次运行的墙上时钟计时。位于 `<run-dir>/timing.json`。
 
-**如何捕获：** 耗时字段（duration 等）从子代理完成通知取，立即写入。`--usage-file` 写出的 `usage.json` 含 `total_tokens`（token总数）/`api_calls`/`model` 但**没有耗时**，用 stdout.log 创建时间与 usage.json 落盘时间之差推算，并在 timing.json 里注明来源。
+**兜底产物：** delegate_task 场景的耗时与 token 都由汇总回退链自动取回（见下条），无需写；何时须手工补见 SKILL.md「5. 评测」第 3 步。`--usage-file` 写出的 `usage.json` 含 `total_tokens`（token总数）/`api_calls`/`model` 但**没有耗时**，用 stdout.log 创建时间与 usage.json 落盘时间之差推算，并在 timing.json 里注明来源。
 
-**delegate_task 场景的token无需手工捕获**：aggregate_benchmark 的回退链已内置 `state.db-delegation` 级，编排契约见 `references/eval-protocol.md`「派发提示词固定条款」。
+**delegate_task 场景的token无需手工捕获**：aggregate_benchmark 的回退链已内置 `state.db-delegation` 级，编排契约见 `references/eval-protocol.md`「派发提示词固定条款」。state.db 定位跟 `HERMES_HOME` 环境变量走——profile 会话（smithy/gzh 等）内跑评测自动读该 profile 的库；跨 profile 手动跑汇总时用 `--db` 显式指明，否则回落 default 主库、归因会静默落空。
 
 ```json
 {

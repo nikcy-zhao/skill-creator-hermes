@@ -174,7 +174,7 @@ def _parse_block(lines: list[str], start: int, indent: int):
                         while li < len(lines) and lines[li].strip() \
                                 and (len(lines[li]) - len(lines[li].lstrip(" "))) > list_indent:
                             k3, sep3, v3 = lines[li].strip().partition(":")
-                            if not sep3 or _parse_scalar(v3) == "" and v3.strip() == "":
+                            if not sep3 or not v3.strip():
                                 raise ValueError(
                                     f"列表项下嵌套 mapping 超出解析器子集: {lines[li]!r}")
                             item[k3.strip()] = _parse_scalar(v3)

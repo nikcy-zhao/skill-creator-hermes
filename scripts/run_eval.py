@@ -12,7 +12,7 @@ Hermes 适配说明：
     归因口径：只认对夹具（<name>-eval-<uuid>，候选 description 的唯一载体）的
     skill_view——被测技能已安装时，触发已装副本（载的是旧 description）不计入。
     定位不到会话时退回 usage.json 计数增量判定（全局信号，仅串行可信，
-    夹具＋真技能都盯以防定位失败漏报）。
+    只盯夹具——真技能的计数来自已装副本，载的是旧 description，不能计到候选头上）。
   - 每个查询运行使用唯一技能名（<name>-eval-<uuid>）写入
     ~/.hermes/skills/，保证并行运行之间的归属无歧义；运行结束后删除
     技能目录，并尽力清理评测产生的 usage 记录。
@@ -50,8 +50,15 @@ def find_project_root() -> Path:
     return current
 
 
+def _hermes_home() -> Path:
+    # state.db/.usage.json/夹具目录都随 HERMES_HOME 走（profile 会话评测的库在 profile 目录）；
+    # 写死 ~/.hermes 会让 profile 内评测静默查错库——smithy 2026-10-18 实锤
+    home = os.environ.get("HERMES_HOME")
+    return Path(home) if home else Path.home() / ".hermes"
+
+
 def _usage_file() -> Path:
-    return Path.home() / ".hermes" / "skills" / ".usage.json"
+    return _hermes_home() / "skills" / ".usage.json"
 
 
 def _read_usage_counts() -> dict:
@@ -153,7 +160,10 @@ def _find_session_for_query(query: str, since_ts: float) -> str | None:
 
 
 def _state_db() -> Path:
-    return Path.home() / ".hermes" / "state.db"
+    # 跟 HERMES_HOME 走：profile 会话（smithy/gzh 等）的 state.db 在各自 profile 目录，
+    # 写死 ~/.hermes 会查到 default 主库，归因静默落空（2026-10-18 smithy 评测实锤）
+    home = os.environ.get("HERMES_HOME")
+    return Path(home) / "state.db" if home else Path.home() / ".hermes" / "state.db"
 
 
 def run_single_query(
@@ -174,7 +184,7 @@ def run_single_query(
     # uuid4().hex[:8] 撞名时静默复用会互相覆盖——重试拿新名字
     for _ in range(3):
         clean_name = f"{skill_name}-eval-{uuid.uuid4().hex[:8]}"
-        skill_dir = Path.home() / ".hermes" / "skills" / clean_name
+        skill_dir = _hermes_home() / "skills" / clean_name
         try:
             skill_dir.mkdir(parents=True)
             break
@@ -205,8 +215,8 @@ def run_single_query(
         if model:
             cmd.extend(["--model", model])
 
-        # 快照与启动时刻：夹具＋真技能都盯（兜底用）；proc_start_ts 供会话定位
-        snapshot = _snapshot_counts(clean_name, skill_name)
+        # 快照与启动时刻：兜底只盯夹具（真技能计数属于已装副本，不算候选）；proc_start_ts 供会话定位
+        snapshot = _snapshot_counts(clean_name)
         proc_start_ts = time.time() - 5
 
         # start_new_session：超时才能 killpg 杀掉 hermes 派生的整个进程组，
@@ -268,47 +278,51 @@ def _cleanup_usage_records(skill_name: str) -> int:
     path = _usage_file()
     if not path.exists():
         return 0
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return 0
-    if not isinstance(data, dict):
-        return 0
-    prefix = f"{skill_name}-eval-"
-    stale = [k for k in data if isinstance(k, str) and k.startswith(prefix)]
-    if not stale:
-        return 0
-    for k in stale:
-        data.pop(k, None)
-    fd = None
-    tmp = None
-    try:
-        import tempfile
+    import fcntl
+    import tempfile
 
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".usage_", suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            fd = None  # fdopen 已接管，避免 except 路径二次关闭
-            json.dump(data, f, indent=2, sort_keys=True, ensure_ascii=False)
-        os.replace(tmp, path)
-        tmp = None  # 已原子替换，无需清理
-    except Exception as e:
-        # 丢更新窗口说明（读→写之间别人写入会被覆盖）：usage 记录只是计数缓存，
-        # 下次触发会重写——失败时保文件完整优先，警告即可
-        print(f"Warning: usage-record cleanup failed: {e}", file=sys.stderr)
-        return 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # 锁内完成整个 read-modify-write：hermes 本体对 .usage.json 的写周期用
+    # flock 序列化，这里不加锁会覆盖清理窗口内的并发计数写入
+    lock_f = open(str(path) + ".lock", "w")
+    try:
+        fcntl.flock(lock_f, fcntl.LOCK_EX)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return 0
+        if not isinstance(data, dict):
+            return 0
+        prefix = f"{skill_name}-eval-"
+        stale = [k for k in data if isinstance(k, str) and k.startswith(prefix)]
+        if not stale:
+            return 0
+        for k in stale:
+            data.pop(k, None)
+        fd = None
+        tmp = None
+        try:
+            fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".usage_", suffix=".tmp")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                fd = None  # fdopen 已接管，避免 except 路径二次关闭
+                json.dump(data, f, indent=2, sort_keys=True, ensure_ascii=False)
+            os.replace(tmp, path)
+            tmp = None  # 已原子替换，无需清理
+        finally:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            if tmp is not None:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+        return len(stale)
     finally:
-        if fd is not None:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-        if tmp is not None:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-    return len(stale)
+        fcntl.flock(lock_f, fcntl.LOCK_UN)
+        lock_f.close()
 
 
 def validate_eval_set(eval_set) -> tuple[bool, str]:
@@ -452,7 +466,11 @@ def main():
         print(f"Error: No SKILL.md found at {skill_path}", file=sys.stderr)
         sys.exit(1)
 
-    name, original_description, content = parse_skill_md(skill_path)
+    try:
+        name, original_description, content = parse_skill_md(skill_path)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     description = args.description or original_description
     project_root = find_project_root()
 

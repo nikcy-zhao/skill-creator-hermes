@@ -317,7 +317,11 @@ def main():
         print(f"Error: No SKILL.md found at {skill_path}", file=sys.stderr)
         sys.exit(1)
 
-    name, _, _ = parse_skill_md(skill_path)
+    try:
+        name, _, _ = parse_skill_md(skill_path)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     # Set up live report path
     if args.report != "none":
@@ -383,12 +387,14 @@ def main():
         (results_dir / "results.json").write_text(json_output, encoding="utf-8")
 
     # Write final HTML report (without auto-refresh)
+    if live_report_path or results_dir:
+        html_out = generate_html(output, auto_refresh=False, skill_name=name)
     if live_report_path:
-        live_report_path.write_text(generate_html(output, auto_refresh=False, skill_name=name), encoding="utf-8")
+        live_report_path.write_text(html_out, encoding="utf-8")
         print(f"\nReport: {live_report_path}", file=sys.stderr)
 
     if results_dir and live_report_path:
-        (results_dir / "report.html").write_text(generate_html(output, auto_refresh=False, skill_name=name), encoding="utf-8")
+        (results_dir / "report.html").write_text(html_out, encoding="utf-8")
 
     if results_dir:
         print(f"Results saved to: {results_dir}", file=sys.stderr)

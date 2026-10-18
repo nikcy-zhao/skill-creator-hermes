@@ -7,9 +7,9 @@
 ```
 skill-name/          ← 技能目录（名 = SKILL.md 的 name）
 	├── SKILL.md       ← 必有。技能本体：frontmatter + 七节正文
-	├── scripts/       ← 可选。确定性脚本，只运行不读（含子代理提示词）
+	├── scripts/       ← 可选。确定性脚本，只运行不读
 	├── references/    ← 可选。按需阅读的资料：schema、规范、查表、参考资料等
-	├── templates/     ← 可选。待填空的输出骨架：报告模板、PR 格式等
+	├── templates/     ← 可选。待填空的输出骨架：报告模板、子代理提示词、PR 格式等
 	└── assets/        ← 可选。产物素材/脚手架：HTML 底板、样式、图片等
 ```
 

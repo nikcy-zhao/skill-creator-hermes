@@ -51,7 +51,8 @@ def text_contains(path: Path, needle: str) -> bool:
 def text_matches(path: Path, pattern: str, count: int = 1) -> bool:
     """判据：文本内容中正则 pattern 至少命中 count 次（格式检查）。
 
-    用 re.search 语义逐次推进统计命中次数。
+    re.findall 非重叠全局计数（非逐次推进——重叠型 pattern 的命中数会小于
+    逐次 search 语义，判据写 pattern 时须知此口径）。
     """
     import re
     try:
@@ -72,16 +73,14 @@ def table_columns(path: Path, expected: int, delimiter: str = ",", skip_header: 
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return False
-    lines = [l for l in text.splitlines() if l.strip()]
-    if skip_header and lines:
-        lines = lines[1:]
-    if not lines:
+    # 整体按 CSV 语义解析：引号内嵌换行的合法字段不能被 splitlines 拆成两行
+    rows = [r for r in csv.reader(io.StringIO(text), delimiter=delimiter)
+            if any(cell.strip() for cell in r)]
+    if skip_header and rows:
+        rows = rows[1:]
+    if not rows:
         return False
-    for l in lines:
-        row = next(csv.reader(io.StringIO(l), delimiter=delimiter), [])
-        if len(row) != expected:
-            return False
-    return bool(lines)
+    return all(len(row) == expected for row in rows)
 
 
 def expectations_json(results: list[tuple[str, bool]], evidence: str = "scripted check") -> str:

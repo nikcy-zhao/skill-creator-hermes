@@ -244,7 +244,7 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
         if data.get("best_iteration") is not None:
             best_iter = data.get("best_iteration")
         elif test_queries:
-            best_iter = max(history, key=lambda h: h.get("test_passed") or 0).get("iteration")
+            best_iter = max(history, key=lambda h: (h.get("test_passed") or 0, h.get("train_passed") or 0)).get("iteration")
         else:
             best_iter = max(history, key=lambda h: h.get("train_passed") or 0).get("iteration")
         try:
@@ -272,7 +272,7 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
         test_by_query = {r["query"]: r for r in test_results if r.get("query")} if test_results else {}
 
         # Compute aggregate correct/total runs across all retries
-        def aggregate_runs(results: list[dict]) -> tuple[int, int]:
+        def aggregate_runs(results: list[dict]) -> tuple[int, int]:  # noqa: 循环体内定义仅本函数使用
             correct = 0
             total = 0
             for r in results:

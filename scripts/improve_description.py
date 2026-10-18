@@ -43,7 +43,7 @@ def build_history_block(history: list[dict]) -> str:
         parts.append(f'<attempt {score_str}>')
         parts.append(f'Description: "{h.get("description", "")}"')
         if id(h) in recent_ids:
-            train_attempt_results = h.get("train_results") or h.get("results") or []
+            train_attempt_results = h.get("train_results") or []
             if train_attempt_results:
                 parts.append("Train results:")
                 for r in train_attempt_results:
@@ -123,7 +123,6 @@ def improve_description(
     eval_results: dict,
     history: list[dict],
     model: str,
-    test_results: dict | None = None,
     log_dir: Path | None = None,
     iteration: int | None = None,
 ) -> str:
@@ -139,11 +138,7 @@ def improve_description(
 
     # Build scores summary
     train_score = f"{eval_results['summary']['passed']}/{eval_results['summary']['total']}"
-    if test_results:
-        test_score = f"{test_results['summary']['passed']}/{test_results['summary']['total']}"
-        scores_summary = f"Train: {train_score}, Test: {test_score}"
-    else:
-        scores_summary = f"Train: {train_score}"
+    scores_summary = f"Train: {train_score}"
 
     prompt = f"""You are optimizing a skill description for a Hermes agent skill called "{skill_name}". A "skill" is sort of like a prompt, but with progressive disclosure -- there's a title and description that the agent sees when deciding whether to use the skill, and then if it does use the skill, it reads the .md file which has lots more details and potentially links to other resources in the skill folder like helper files and scripts and additional documentation or examples.
 
@@ -208,9 +203,11 @@ Please respond with only the new description text in <new_description> tags, not
         raise RuntimeError(
             f"improve response missing <new_description> tags; raw output head: {text[:200]!r}"
         )
-    # 只去成对包裹引号，避免误删首尾合法引号
+    # 只去成对包裹引号，避免误删首尾合法引号；剥完复查空串（模型回 "" 会绕过上面的非空校验）
     if len(description) >= 2 and description[0] == description[-1] and description[0] in "\"'":
         description = description[1:-1]
+    if not description:
+        raise RuntimeError("improve response empty after quote strip")
 
     transcript: dict = {
         "iteration": iteration,
@@ -293,7 +290,11 @@ def main():
         print(f"Error: history must be a JSON array, got {type(history).__name__}", file=sys.stderr)
         sys.exit(1)
 
-    name, _, content = parse_skill_md(skill_path)
+    try:
+        name, _, content = parse_skill_md(skill_path)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     current_description = eval_results["description"]
 
     if args.verbose:

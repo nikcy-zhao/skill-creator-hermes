@@ -277,6 +277,49 @@ class TestTokensFromSessionUsage(unittest.TestCase):
         self.assertEqual(r["api_calls"], 3)
 
 
+    def test_tool_receipt_writer_channel(self):
+        """aggregate：真实落库主通道——写入证据在 role='tool' 回执行（assistant 行
+        tool_calls 常为空），user 派单文本行含路径不得算作者。2026-10-18 实测形态。"""
+        from scripts import aggregate_benchmark
+
+        td = _tempdir(self)
+        outputs = td / "eval-a" / "with_skill" / "run-1" / "outputs"
+        outputs.mkdir(parents=True)
+        db = td / "state.db"
+        con = sqlite3.connect(db)
+        con.execute(
+            "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT,"
+            " content TEXT, tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, timestamp REAL)")
+        # 真写者：write_file 回执行（role='tool'，content 含落盘路径）
+        con.execute(
+            "INSERT INTO messages (session_id, role, content, tool_calls, tool_name, timestamp)"
+            " VALUES (?,?,?,?,?,1.0)",
+            ("sub-agent", "tool", f'{{"bytes_written": 2024, "path": "{outputs.as_posix()}/answer.md"}}',
+             "", "write_file"))
+        # 干扰项：派单会话的 user 提示词含同路径（只读语义）——不得计入
+        con.execute(
+            "INSERT INTO messages (session_id, role, content, tool_calls, tool_name, timestamp)"
+            " VALUES (?,?,?,?,?,1.0)",
+            ("orchestrator", "user", f"把答案写入 {outputs.as_posix()}/answer.md", "", None))
+        con.execute(
+            "CREATE TABLE session_model_usage (session_id TEXT, model TEXT, api_call_count INTEGER,"
+            " input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER,"
+            " reasoning_tokens INTEGER)")
+        con.execute(
+            "INSERT INTO session_model_usage VALUES ('sub-agent','m',3,1000,500,0,0)")
+        con.execute(
+            "INSERT INTO session_model_usage VALUES ('orchestrator','m',99,99999,99999,0,0)")
+        con.commit()
+        con.close()
+
+        r = aggregate_benchmark._tokens_from_session_usage(outputs.parent, db)
+        self.assertIsNotNone(r)
+        self.assertEqual(r["source"], "state.db-session")
+        # 只归因真写者，orchestrator 的海量 token 不得混入
+        self.assertEqual(r["total_tokens"], 1500)
+        self.assertEqual(r["api_calls"], 3)
+
+
 class TestPassRateFallback(unittest.TestCase):
     """aggregate：grading.json 的 summary 缺 pass_rate 时由 passed/total 现算，不得静默 0。"""
 
@@ -455,6 +498,91 @@ class TestRunEvalArgBounds(unittest.TestCase):
             with self.assertRaises(SystemExit) as cm:
                 run_eval.main()
             self.assertNotEqual(cm.exception.code, 0)
+
+
+
+
+class TestVerifyBaselineClean(unittest.TestCase):
+    """verify 反向检查：without_skill 组对【被测技能】的 skill_view 真调用即拦；
+    对其他技能的调用是裸模型通用能力、不算污染（2026-10-18 语义修正——
+    首版查"任何 skill_view"是自测特例当通例，评测别的 skill 时会误杀合法基线）。"""
+
+    def _mk_ws(self, td):
+        ws = td / "iteration-1"
+        run = ws / "eval-a" / "without_skill" / "run-1" / "outputs"
+        run.mkdir(parents=True)
+        (run / "answer.md").write_text("x", encoding="utf-8")
+        return ws, run
+
+    def _mk_db(self, td, outputs, view_target):
+        """view_target: None=无 skill_view；'target-skill'=view 被测技能；'other-skill'=view 别的技能"""
+        db = td / "state.db"
+        con = sqlite3.connect(db)
+        con.execute(
+            "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT,"
+            " content TEXT, tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, timestamp REAL)")
+        con.execute(
+            "INSERT INTO messages (session_id, role, content, tool_calls, tool_name, timestamp)"
+            " VALUES ('base','tool',?, '','write_file',1.0)",
+            (json.dumps({"path": f"{outputs.as_posix()}/answer.md"}),))
+        if view_target:
+            con.execute(
+                "INSERT INTO messages (session_id, role, content, tool_calls, tool_name, timestamp)"
+                " VALUES ('base','assistant','',?,'',2.0)",
+                (json.dumps([{"function": {"name": "skill_view", "arguments": json.dumps(
+                    {"name": view_target})}}]),))
+        con.commit(); con.close()
+        return db
+
+    def _verify(self, ws, db):
+        from scripts import aggregate_benchmark as ab
+        import contextlib, io
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                ab._verify_runs(ws, "target-skill", db_path=db)
+        except SystemExit as e:
+            return e.code, err.getvalue()
+        return 0, err.getvalue()
+
+    def test_clean_baseline_passes(self):
+        td = _tempdir(self)
+        ws, run = self._mk_ws(td)
+        code, err = self._verify(ws, self._mk_db(td, run, view_target=None))
+        self.assertEqual(code, 0)
+        self.assertNotIn("污染", err)
+
+    def test_other_skill_view_not_pollution(self):
+        """评测别的 skill 时：基线自主 view 了第三方技能 → 不是污染（正例）。"""
+        td = _tempdir(self)
+        ws, run = self._mk_ws(td)
+        code, err = self._verify(ws, self._mk_db(td, run, view_target="some-other-skill"))
+        self.assertEqual(code, 0)
+        self.assertNotIn("污染", err)
+
+    def test_polluted_baseline_blocked(self):
+        td = _tempdir(self)
+        ws, run = self._mk_ws(td)
+        code, err = self._verify(ws, self._mk_db(td, run, view_target="target-skill"))
+        self.assertEqual(code, 4)
+        self.assertIn("基线被污染", err)
+
+    def test_skill_view_mention_not_call(self):
+        """字样≠调用：write_file 参数文本里出现 skill_view 一词不构成调用。"""
+        from scripts import aggregate_benchmark as ab
+        td = _tempdir(self)
+        db = td / "state.db"
+        con = sqlite3.connect(db)
+        con.execute(
+            "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT,"
+            " content TEXT, tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, timestamp REAL)")
+        con.execute(
+            "INSERT INTO messages (session_id, role, content, tool_calls, tool_name, timestamp)"
+            " VALUES ('base','assistant','',?,'',1.0)",
+            (json.dumps([{"function": {"name": "write_file", "arguments": json.dumps(
+                {"content": "if e.get(\"name\")==\"skill_view\": trigger=True"})}}]),))
+        con.commit(); con.close()
+        self.assertFalse(ab._skill_view_hit(sqlite3.connect(f"file:{db}?mode=ro", uri=True), "base", "target-skill"))
 
 
 class TestPrecheckGhostPath(unittest.TestCase):

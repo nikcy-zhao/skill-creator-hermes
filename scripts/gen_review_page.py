@@ -55,7 +55,7 @@ def main() -> None:
 
     try:
         items = json.loads(args.queries.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
         parser.error(f"无法读取查询文件 {args.queries}: {e}")
     if not isinstance(items, list):
         parser.error(f"查询文件须为 JSON 数组，得到 {type(items).__name__}")
